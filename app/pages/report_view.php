@@ -5,7 +5,7 @@ if (!$job || !can_see_job($job) || (!is_internal() && $it['status'] !== 'APPROVE
 if ($it['status'] !== 'APPROVED') redirect('review-item', ['id' => $it['id']]);
 $emails = all('SELECT * FROM email_log WHERE item_id=? OR (job_id=? AND item_id IS NULL) ORDER BY id DESC', [$it['id'], $job['id']]);
 $revs = all("SELECT a.*, u.name uname FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE a.entity='item' AND a.entity_id=? ORDER BY a.id", [$it['id']]);
-$oldPdfs = is_internal() ? glob(UPLOAD_DIR . '/reports/' . $it['report_no'] . '*.pdf') : [];
+$oldPdfs = is_internal() ? glob(UPLOAD_DIR . '/reports/' . file_safe((string)$it['report_no']) . '*.pdf') : [];
 $rej = (int)$it['rejected_qty'];
 $subject = "QC Inspection Report | {$job['client_code']} | PO {$job['po_no']} | {$it['sku']}";
 $msg = "Dear Sir/Madam,\n\nPlease find attached the QC inspection report for PO {$job['po_no']}.\nResult: " . ($it['final_result'] === 'CONDITIONAL' ? 'CONDITIONAL PASS' : $it['final_result']) . ($rej ? " ($rej pcs rejected)" : '') . '.';

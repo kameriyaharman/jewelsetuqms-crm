@@ -30,7 +30,8 @@ case 'save':
     $s = (int)($in['step'] ?? 0); $D = (array)($in['data'] ?? []);
     $up = ['updated_at' => now(), 'step' => max((int)$it['step'], $s)];
     if ($it['status'] === 'PENDING') $up['status'] = 'IN_PROGRESS';
-    if ($s === 1) { $up['reinspection'] = !empty($D['reinspection']) ? 1 : 0; if (!empty($D['insp_date'])) $up['insp_date'] = $D['insp_date']; if (!empty($D['gps'])) $up['gps'] = mb_substr((string)$D['gps'], 0, 120); }
+    if ($s === 1) { $up['reinspection'] = !empty($D['reinspection']) ? 1 : 0; if (!empty($D['insp_date'])) $up['insp_date'] = $D['insp_date']; if (!empty($D['gps'])) $up['gps'] = mb_substr((string)$D['gps'], 0, 120);
+        foreach (['lot_no', 'xrf_machine', 'master_sample'] as $k) if (isset($D[$k])) $up[$k] = mb_substr(trim((string)$D[$k]), 0, 120); }
     if ($s === 2) {
         $insp = (int)($D['inspected_qty'] ?? 0); $acc = (int)($D['accepted_qty'] ?? 0); $rej = (int)($D['rejected_qty'] ?? 0);
         $locked = !($job['scope'] === 'SAMPLE');
@@ -47,7 +48,7 @@ case 'save':
             if (trim((string)($x['param'] ?? '')) === '') continue;
             $spec = (float)preg_replace('/[^0-9.\-]/', '', (string)$x['spec']); $tol = abs((float)preg_replace('/[^0-9.]/', '', (string)$x['tol'])); $act2 = trim((string)$x['actual']);
             $res = $act2 === '' ? '' : (abs((float)$act2 - $spec) <= $tol + 1e-9 ? 'PASS' : 'FAIL');
-            $m[] = ['param' => (string)$x['param'], 'spec' => (string)$x['spec'], 'tol' => (string)$x['tol'], 'unit' => (string)($x['unit'] ?? ''), 'actual' => $act2, 'result' => $res];
+            $m[] = ['param' => (string)$x['param'], 'spec' => (string)$x['spec'], 'tol' => (string)$x['tol'], 'unit' => (string)($x['unit'] ?? ''), 'qty' => (string)($x['qty'] ?? 2), 'actual' => $act2, 'result' => $res];
         }
         $up['meas_json'] = json_encode($m);
     }
@@ -58,10 +59,11 @@ case 'save':
             insert('item_defects', ['item_id' => $it['id'], 'category' => (string)$d['category'], 'type' => (string)$d['type'],
                 'severity' => in_array($d['severity'] ?? '', ['CRITICAL', 'MAJOR', 'MINOR'], true) ? $d['severity'] : 'MAJOR', 'qty' => (int)$d['qty'], 'remark' => (string)($d['remark'] ?? '')]);
     }
-    if ($s === 8) { $up['inspector_result'] = in_array($D['result'] ?? '', ['PASS', 'FAIL', 'PENDING', 'CONDITIONAL'], true) ? $D['result'] : null; $up['remark'] = (string)($D['remark'] ?? ''); $up['action_required'] = (string)($D['action_required'] ?? ''); }
+    if ($s === 8) { $up['inspector_result'] = in_array($D['result'] ?? '', ['PASS', 'FAIL', 'PENDING', 'CONDITIONAL'], true) ? $D['result'] : null; $up['remark'] = (string)($D['remark'] ?? ''); $up['action_required'] = (string)($D['action_required'] ?? '');
+        foreach (['factory_coop', 'factory_line', 'factory_ready'] as $k) $up[$k] = in_array($D[$k] ?? '', ['GOOD', 'AVERAGE', 'POOR'], true) ? $D[$k] : null; }
     update('qc_items', $up, 'id=?', [$it['id']]);
     $fresh = one('SELECT * FROM qc_items WHERE id=?', [$it['id']]);
-    $sys = system_result($job + ['client_major_limit' => val('SELECT major_limit FROM clients WHERE id=?', [$job['client_id']])], $fresh, all('SELECT * FROM item_defects WHERE item_id=?', [$it['id']]), jdec($fresh['checks_json']), jdec($fresh['meas_json']), jdec($fresh['tests_json']));
+    $sys = system_result($job + ['client_fail_threshold' => client_threshold((int)$job['client_id'])], $fresh, all('SELECT * FROM item_defects WHERE item_id=?', [$it['id']]), jdec($fresh['checks_json']), jdec($fresh['meas_json']), jdec($fresh['tests_json']));
     q('UPDATE qc_items SET system_result=? WHERE id=?', [$sys, $it['id']]);
     json_out(['ok' => true, 'system_result' => $sys, 'saved_at' => date('h:i A')]);
 
@@ -74,7 +76,7 @@ case 'photo':
     $dir = UPLOAD_DIR . '/photos/' . date('Ym'); if (!is_dir($dir)) mkdir($dir, 0775, true);
     $name = 'photos/' . date('Ym') . '/' . $it['id'] . '_' . bin2hex(random_bytes(5)) . '.' . ($m[1] === 'jpeg' ? 'jpg' : $m[1]);
     file_put_contents(UPLOAD_DIR . '/' . $name, $bin);
-    $pid = insert('item_photos', ['item_id' => $it['id'], 'kind' => in_array($in['kind'] ?? '', ['defect', 'product', 'dimension', 'packaging', 'spec', 'other'], true) ? $in['kind'] : 'other',
+    $pid = insert('item_photos', ['item_id' => $it['id'], 'kind' => in_array($in['kind'] ?? '', ['defect', 'product', 'xrf', 'weight', 'dimension', 'packaging', 'spec', 'other'], true) ? $in['kind'] : 'other',
         'path' => $name, 'remark' => mb_substr((string)($in['remark'] ?? ''), 0, 200), 'created_at' => now()]);
     json_out(['ok' => true, 'id' => $pid, 'url' => url('file', ['p' => $name])]);
 

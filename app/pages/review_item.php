@@ -77,7 +77,9 @@ layout_start('Inspection review — ' . ($it['report_no'] ?: $it['sku']), 'revie
 <div class="card"><div class="card-h"><h2>Inspection review — <?= h($it['report_no'] ?: $job['job_no'] . ' / ' . $it['sku']) ?></h2><?= badge($it['status']) ?></div>
   <div class="kv"><div><small>Inspector</small><b><?= h($job['inspector_code'] . ' · ' . $job['inspector_name']) ?></b></div><div><small>Vendor</small><b><?= h($job['vendor_name']) ?></b></div><div><small>SKU</small><b class="mono"><?= h($it['sku']) ?></b></div>
     <div><small>PO</small><b><?= h($job['po_no']) ?></b></div><div><small>Submitted</small><b><?= fdt($it['submitted_at']) ?></b></div><div><small>System result</small><b><?= badge($it['system_result'] ?: 'PENDING') ?></b></div>
-    <div><small>Inspector result</small><b><?= badge($it['inspector_result'] ?: 'PENDING') ?></b></div><div><small>GPS / start</small><b><?= h($it['gps'] ?: '—') ?></b></div></div>
+    <div><small>Inspector result</small><b><?= badge($it['inspector_result'] ?: 'PENDING') ?></b></div><div><small>GPS / start</small><b><?= h($it['gps'] ?: '—') ?></b></div>
+    <div><small>Pass / fail rule</small><b><?= h(result_rule_text($job)) ?></b></div><div><small>Lot no. · XRF machine</small><b><?= h(($it['lot_no'] ?: '—') . ' · ' . ($it['xrf_machine'] ?: '—')) ?></b></div>
+    <div><small>Factory evaluation</small><b><?= h(implode(' / ', array_map(fn($x) => $x ?: '—', [$it['factory_coop'], $it['factory_line'], $it['factory_ready']]))) ?></b></div></div>
 </div>
 <div class="grid g2" style="margin-top:16px">
 <div class="card" style="margin:0"><h2 class="mb">Quantity</h2>

@@ -5,10 +5,11 @@ $job = $it ? job_load((int)$it['job_id']) : null;
 if (!$job || ((int)$job['inspector_id'] !== (int)$me['id'] && (int)$job['inspector2_id'] !== (int)$me['id'])) { flash('SKU not found in your jobs.', 'err'); redirect('app'); }
 $editable = in_array($it['status'], ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'RETURNED'], true) && in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], true);
 $checks = jdec($it['checks_json']);
-if (!$checks) { $cp = all('SELECT name FROM checkpoints WHERE (client_id IS NULL OR client_id=?) AND (category IS NULL OR category=? OR category=\'\') ORDER BY sort, id', [$job['client_id'], $it['product']]);
-    foreach ($cp as $c) $checks[] = ['name' => $c['name'], 'result' => '', 'remark' => '']; }
+$cpm = all('SELECT * FROM checkpoints WHERE (client_id IS NULL OR client_id=?) AND (category IS NULL OR category=? OR category=\'\') ORDER BY sort, id', [$job['client_id'], $it['product']]);
+$remarks = []; foreach ($cpm as $c) $remarks[$c['name']] = ['PASS' => $c['pass_remark'], 'FAIL' => $c['fail_remark'], 'NA' => $c['na_remark']];
+if (!$checks) foreach ($cpm as $c) $checks[] = ['name' => $c['name'], 'result' => '', 'remark' => ''];
 $tests = jdec($it['tests_json']);
-if (!$tests) foreach (all('SELECT name FROM onsite_tests ORDER BY sort, id') as $t) $tests[] = ['name' => $t['name'], 'qty' => 2, 'result' => '', 'remark' => ''];
+if (!$tests) foreach (all('SELECT name, method FROM onsite_tests ORDER BY sort, id') as $t) $tests[] = ['name' => $t['name'], 'qty' => 2, 'result' => '', 'remark' => (string)$t['method']];
 $meas = jdec($it['meas_json']);
 if (!$meas) {
     $n = fn($s) => preg_replace('/[^0-9.]/', '', explode('+', (string)$s)[0]) ?: '';
@@ -27,7 +28,7 @@ $returned = $it['status'] === 'RETURNED' ? array_filter(array_map('trim', explod
 $S = ['item' => (int)$it['id'], 'editable' => $editable, 'step' => (int)$it['step'], 'insp_qty' => (int)$it['insp_qty'], 'ready' => (int)$it['ready_qty'],
     'lockedQty' => $lockedQty, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'defects' => $defects, 'photos' => $photos, 'dm' => $dm,
     'needPhoto' => flag('require_defect_photo'), 'gps' => flag('gps_on_inspection_start'), 'started' => (bool)$it['started_at'], 'plan' => $plan,
-    'majorLimit' => (float)val('SELECT major_limit FROM clients WHERE id=?', [$job['client_id']]), 'aql' => $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL'];
+    'threshold' => client_threshold((int)$job['client_id']), 'remarks' => $remarks, 'aql' => $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL'];
 $siblings = all('SELECT id, sku, status FROM qc_items WHERE job_id=? ORDER BY id', [$job['id']]);
 app_start($it['sku'], url('app/job', ['id' => $job['id']]), $editable ? '<button class="btn sm" style="background:#fff3" onclick="openDlg(\'holddlg\')" title="Hold for approval">' . icon('pause') . '</button>' : '');
 ?>
@@ -61,6 +62,9 @@ app_start($it['sku'], url('app/job', ['id' => $job['id']]), $editable ? '<button
   <div><small>PO no.</small><b><?= h($job['po_no']) ?></b></div><div><small>SKU</small><b class="mono"><?= h($it['sku']) ?></b></div>
   <div><small>Inspector</small><b><?= h($me['emp_code']) ?></b></div><div><small>Job</small><b><?= h($job['job_no']) ?></b></div></div>
   <div class="f mt"><label>Inspection date</label><input type="date" name="insp_date" value="<?= h($it['insp_date'] ?: today()) ?>"></div>
+  <div class="mgrid2 f"><div><label>Production batch / lot no.</label><input type="text" name="lot_no" value="<?= h($it['lot_no']) ?>" placeholder="LOT-OCT-09A"></div>
+    <div><label>XRF machine used</label><input type="text" name="xrf_machine" value="<?= h($it['xrf_machine'] ?: 'Goldscope SD 550') ?>"></div></div>
+  <div class="f"><label>Master sample reference</label><select name="master_sample"><?php foreach (['Approved Master Sample Available', 'Master Sample Not Available', 'CAD / Photo Reference Only'] as $o): ?><option <?= ($it['master_sample'] ?: 'Approved Master Sample Available') === $o ? 'selected' : '' ?>><?= $o ?></option><?php endforeach ?></select></div>
   <div class="qtyok" id="gpsline" style="font-size:12px;background:var(--rose-ll);color:var(--rose-d)"><?= $it['gps'] ? 'GPS logged · ' . h($it['gps']) : (flag('gps_on_inspection_start') ? 'GPS will be logged when you start' : 'GPS logging off') ?></div>
   <label class="mt">Re-inspection?</label>
   <div class="pfn" style="grid-template-columns:1fr 1fr"><label><input type="radio" name="reinspection" value="PASS" <?= $it['reinspection'] ? 'checked' : '' ?>>YES</label><label><input type="radio" name="reinspection" value="NA" <?= !$it['reinspection'] ? 'checked' : '' ?>>NO</label></div>
@@ -90,7 +94,7 @@ app_start($it['sku'], url('app/job', ['id' => $job['id']]), $editable ? '<button
 </section>
 <!-- 7 -->
 <section class="mcard step" data-step="7"><b>Photos</b>
-  <div class="fr f mt" style="grid-template-columns:1fr 1fr"><div><label>Photo type</label><select id="phkind"><option value="defect">Defect</option><option value="product">Product</option><option value="dimension">Dimension</option><option value="packaging">Packaging</option><option value="spec">Spec sheet</option><option value="other">Other</option></select></div>
+  <div class="fr f mt" style="grid-template-columns:1fr 1fr"><div><label>Photo type</label><select id="phkind"><option value="defect">Defect evidence</option><option value="product">Actual product image</option><option value="xrf">XRF micron report</option><option value="weight">Digital weight scale</option><option value="packaging">925 stamping / barcode / packaging</option><option value="dimension">Dimension</option><option value="other">Other</option></select></div>
     <div><label>Photo remark</label><input type="text" id="phrem" placeholder="e.g. cut mix on centre stone"></div></div>
   <div class="mgrid2 f"><label class="bigbtn" style="margin:0;color:#fff"><?= icon('camera') ?> Take photo<input type="file" accept="image/*" capture="environment" hidden onchange="addPhotos(this)"></label>
     <label class="bigbtn alt" style="margin:0">Upload<input type="file" accept="image/*" multiple hidden onchange="addPhotos(this)"></label></div>
@@ -105,7 +109,11 @@ app_start($it['sku'], url('app/job', ['id' => $job['id']]), $editable ? '<button
     <?php foreach (['PASS', 'FAIL', 'PENDING', 'CONDITIONAL'] as $r): ?><label style="font-size:11.5px"><input type="radio" name="result" value="<?= $r === 'PASS' ? 'PASS' : ($r === 'FAIL' ? 'FAIL' : $r) ?>" <?= $it['inspector_result'] === $r ? 'checked' : '' ?>><?= $r === 'CONDITIONAL' ? 'COND. PASS' : $r ?></label><?php endforeach ?>
   </div>
   <div class="f mt"><label>Inspector remark</label><textarea name="remark"><?= h($it['remark']) ?></textarea></div>
-  <div class="f"><label>Action required</label><textarea name="action_required"><?= h($it['action_required']) ?></textarea></div>
+  <div class="f"><label>Action required (CAPA)</label><textarea name="action_required"><?= h($it['action_required']) ?></textarea></div>
+  <b style="font-size:13.5px">Factory evaluation</b>
+  <?php foreach (['factory_coop' => 'Factory cooperation', 'factory_line' => 'Factory line organization', 'factory_ready' => 'Overall factory QC readiness'] as $fk => $fl): ?>
+  <small style="display:block;margin-top:8px"><?= $fl ?></small><div class="sev"><?php foreach (['GOOD', 'AVERAGE', 'POOR'] as $o): ?><label><input type="radio" name="<?= $fk ?>" value="<?= $o ?>" <?= ($it[$fk] ?: 'GOOD') === $o ? 'checked' : '' ?>><?= $o ?></label><?php endforeach ?></div>
+  <?php endforeach ?>
 </section>
 </form>
 <div id="navbtns" style="display:grid;grid-template-columns:1fr 2fr;gap:8px">
@@ -140,8 +148,8 @@ function pfn(name, val){return `<div class="pfn">${['PASS','FAIL','NA'].map(v=>`
 try{const d=JSON.parse(localStorage.getItem(DK)||'null');if(d&&S.editable){Object.assign(S,d.S||{});}}catch(e){}
 function persist(){if(!S.editable)return;try{localStorage.setItem(DK,JSON.stringify({S:{checks:S.checks,tests:S.tests,meas:S.meas,defects:S.defects},t:Date.now()}));}catch(e){}}
 /* --- renderers --- */
-function rChecks(){document.getElementById('checks').innerHTML=S.checks.map((c,i)=>`<div class="chkrow"><b style="font-size:13.5px">${esc(c.name)}</b>${pfn('ck'+i,c.result)}<input type="text" placeholder="Remark (optional)" data-ckr="${i}" value="${esc(c.remark)}" style="margin-top:6px;${c.result==='FAIL'||c.remark?'':'display:none'}"></div>`).join('');}
-function rTests(){document.getElementById('tests').innerHTML=S.tests.map((c,i)=>`<div class="chkrow"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13.5px">${esc(c.name)}</b><span style="font-size:12px">Qty <input type="number" data-tq="${i}" value="${esc(c.qty)}" style="width:60px;padding:4px 6px"></span></div>${pfn('ts'+i,c.result)}</div>`).join('');}
+function rChecks(){document.getElementById('checks').innerHTML=S.checks.map((c,i)=>`<div class="chkrow"><b style="font-size:13.5px">${i+1}. ${esc(c.name)}</b>${pfn('ck'+i,c.result)}<input type="text" list="rm${i}" placeholder="QC remark" data-ckr="${i}" value="${esc(c.remark)}" style="margin-top:6px;${c.result?'':'display:none'}"><datalist id="rm${i}">${Object.values((S.remarks||{})[c.name]||{}).filter(Boolean).map(r=>`<option value="${esc(r)}">`).join('')}</datalist></div>`).join('');}
+function rTests(){document.getElementById('tests').innerHTML=S.tests.map((c,i)=>`<div class="chkrow"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13.5px">${esc(c.name)}</b><span style="font-size:12px">Qty <input type="number" data-tq="${i}" value="${esc(c.qty)}" style="width:60px;padding:4px 6px"></span></div>${pfn('ts'+i,c.result)}<input type="text" data-tr="${i}" value="${esc(c.remark)}" placeholder="Method / QC remark" style="margin-top:6px"></div>`).join('');}
 function mres(m){if(m.actual===''||m.actual==null||m.spec==='')return '';return Math.abs(parseFloat(m.actual)-parseFloat(m.spec))<=Math.abs(parseFloat(m.tol)||0)+1e-9?'PASS':'FAIL';}
 function rMeas(){const t=document.getElementById('meas');t.innerHTML='<tr><th>Parameter</th><th>Spec</th><th>±Tol</th><th>Actual</th><th></th></tr>'+S.meas.map((m,i)=>{const r=mres(m);return `<tr><td><input data-m="${i}" data-k="param" value="${esc(m.param)}" style="padding:5px;width:84px"></td><td><input data-m="${i}" data-k="spec" value="${esc(m.spec)}" style="padding:5px;width:56px" inputmode="decimal"></td><td><input data-m="${i}" data-k="tol" value="${esc(m.tol)}" style="padding:5px;width:46px" inputmode="decimal"></td><td><input data-m="${i}" data-k="actual" value="${esc(m.actual)}" style="padding:5px;width:60px" inputmode="decimal"></td><td>${r?`<span class="badge b-${r.toLowerCase()}">${r}</span>`:''}</td></tr>`;}).join('');}
 function catOpts(sel){return Object.keys(S.dm).map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');}
@@ -165,22 +173,20 @@ function qtyCheck(){const i=+F.inspected_qty.value||0,a=+F.accepted_qty.value||0
   const ok=a+r===i&&i>0;document.getElementById('qtymsg').innerHTML=(F.accepted_qty.value===''&&F.rejected_qty.value==='')?'':ok?`<div class="qtyok">${a} + ${r} = ${i} ✓ matches inspected qty</div>`:`<div class="qtybad">Quantity mismatch — Accepted + Rejected (${a+r}) ≠ Inspected (${i}). Please check before proceeding.</div>`;return ok;}
 function sysResult(){const sv=sevTotals(),insp=+F.inspected_qty.value||1;let fail=false,why='';
   if(S.aql&&S.plan){for(const k of ['critical','major','minor']){const p=S.plan[k];if(p&&p.re!=null&&sv[k.toUpperCase()]>=p.re){fail=true;why=`${k} ${sv[k.toUpperCase()]} ≥ Re ${p.re}`;}}}
-  else{if(sv.CRITICAL>0){fail=true;why='critical defect found';}else if(sv.MAJOR*100/insp>S.majorLimit){fail=true;why=`major ${(sv.MAJOR*100/insp).toFixed(2)}% > ${S.majorLimit}%`;}}
-  if(!fail&&[...S.checks,...S.tests].some(c=>c.result==='FAIL')){fail=true;why='a check/test failed';}
-  if(!fail&&S.meas.some(m=>mres(m)==='FAIL')){fail=true;why='measurement out of tolerance';}
+  else{const rp=(+F.rejected_qty.value||0)*100/insp;if(rp>=S.threshold){fail=true;why=`Rej/Repair ${rp.toFixed(1)}% ≥ ${S.threshold}%`;}else why=`Rej/Repair ${rp.toFixed(1)}% < ${S.threshold}% — defective pcs segregated`;}
   return [fail?'FAIL':'PASS',why];}
 function rFinal(){const i=+F.inspected_qty.value||0,a=+F.accepted_qty.value||0,r=+F.rejected_qty.value||0,sv=sevTotals(),[res,why]=sysResult();
   document.getElementById('fsum').innerHTML=`<div><b>${i}</b><small>Inspected</small></div><div><b>${a}</b><small>Accepted</small></div><div><b style="color:var(--ruby)">${r}</b><small>Rejected</small></div>`;
   document.getElementById('fsev').innerHTML=`<div><b>${sv.CRITICAL}</b><small>Critical</small></div><div><b>${sv.MAJOR}</b><small>Major</small></div><div><b>${sv.MINOR}</b><small>Minor</small></div>`;
-  document.getElementById('sysres').innerHTML=`System suggests: <b>${res}</b>${why?' ('+esc(why)+')':''} — QC manager decides.`;
+  document.getElementById('sysres').innerHTML=`System suggests: <b>${res}</b>${why?' ('+esc(why)+')':''} — QC manager decides.`+([...S.checks,...S.tests].some(c=>c.result==='FAIL')?'<br>⚠ Some checkpoints / tests are FAIL — mention in remarks.':'');
   if(!F.querySelector('[name=result]:checked')){const x=F.querySelector(`[name=result][value=${res}]`);if(x)x.checked=true;}}
 /* --- collect --- */
 function collect(step){
-  if(step===1) return {insp_date:F.insp_date.value, reinspection:(F.querySelector('[name=reinspection]:checked')||{}).value==='PASS', gps:S.gpsv||''};
+  if(step===1) return {insp_date:F.insp_date.value, reinspection:(F.querySelector('[name=reinspection]:checked')||{}).value==='PASS', gps:S.gpsv||'', lot_no:F.lot_no.value, xrf_machine:F.xrf_machine.value, master_sample:F.master_sample.value};
   if(step===2) return {inspected_qty:+F.inspected_qty.value, accepted_qty:+F.accepted_qty.value, rejected_qty:+F.rejected_qty.value};
   if(step===3) return {checks:S.checks}; if(step===4) return {meas:S.meas.map(m=>({...m,result:mres(m)}))};
   if(step===5) return {tests:S.tests}; if(step===6) return {defects:S.defects};
-  if(step===8) return {result:(F.querySelector('[name=result]:checked')||{}).value||'', remark:F.remark.value, action_required:F.action_required.value};
+  if(step===8){const g=n=>(F.querySelector(`[name=${n}]:checked`)||{}).value||''; return {result:g('result'), remark:F.remark.value, action_required:F.action_required.value, factory_coop:g('factory_coop'), factory_line:g('factory_line'), factory_ready:g('factory_ready')};}
   return {};
 }
 async function saveStep(step){
@@ -216,7 +222,8 @@ window.addTest=()=>{const n=prompt('Test name');if(n){S.tests.push({name:n,qty:2
 window.addDef=()=>{const c=Object.keys(S.dm)[0];S.defects.push({category:c,type:(S.dm[c][0]||{}).n,severity:(S.dm[c][0]||{}).s||'MAJOR',qty:'',remark:''});rDefs();};
 /* --- events --- */
 F.addEventListener('change',e=>{const t=e.target,n=t.name||'';
-  if(n.startsWith('ck')){const i=+n.slice(2);S.checks[i].result=t.value;const r=document.querySelector(`[data-ckr="${i}"]`);if(r)r.style.display=t.value==='FAIL'||r.value?'':'none';}
+  if(n.startsWith('ck')){const i=+n.slice(2),c=S.checks[i],pre=((S.remarks||{})[c.name]||{}),old=c.result;c.result=t.value;const r=document.querySelector(`[data-ckr="${i}"]`);
+    if(r){r.style.display='';if(!r.value||Object.values(pre).includes(r.value)){r.value=pre[t.value]||'';c.remark=r.value;}}}
   if(n.startsWith('ts')) S.tests[+n.slice(2)].result=t.value;
   if(n.startsWith('sv')) S.defects[+n.slice(2)].severity=t.value;
   if(t.dataset.d!==undefined){const d=S.defects[+t.dataset.d];d[t.dataset.k]=t.value;if(t.dataset.k==='category'){const f=(S.dm[t.value]||[])[0]||{};d.type=f.n;d.severity=f.s||d.severity;rDefs();}if(t.dataset.k==='type'){const f=(S.dm[d.category]||[]).find(x=>x.n===t.value);if(f){d.severity=f.s;rDefs();}}}
@@ -224,6 +231,7 @@ F.addEventListener('change',e=>{const t=e.target,n=t.name||'';
 F.addEventListener('input',e=>{const t=e.target;
   if(t.dataset.ckr!==undefined) S.checks[+t.dataset.ckr].remark=t.value;
   if(t.dataset.tq!==undefined) S.tests[+t.dataset.tq].qty=t.value;
+  if(t.dataset.tr!==undefined) S.tests[+t.dataset.tr].remark=t.value;
   if(t.dataset.m!==undefined){S.meas[+t.dataset.m][t.dataset.k]=t.value;const tr=t.closest('tr'),r=mres(S.meas[+t.dataset.m]);tr.lastElementChild.innerHTML=r?`<span class="badge b-${r.toLowerCase()}">${r}</span>`:'';}
   if(t.dataset.d!==undefined&&t.dataset.k!=='category'&&t.dataset.k!=='type'){S.defects[+t.dataset.d][t.dataset.k]=t.value;defSummary();}
   if(['inspected_qty','accepted_qty','rejected_qty'].includes(t.name)){ if(t.name==='accepted_qty'&&F.inspected_qty.value){F.rejected_qty.value=Math.max(0,(+F.inspected_qty.value)-(+t.value||0));} qtyCheck(); }

@@ -29,7 +29,7 @@ if (is_post() && post('step') === 'upload') {
     $hdr = array_map(fn($x) => strtolower(preg_replace('/[^a-z]/i', '', (string)$x)), $raw[0]);
     $find = function (array $names) use ($hdr) { foreach ($names as $n) { $k = array_search($n, $hdr, true); if ($k !== false) return $k; } return null; };
     $map = [];
-    foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design'],
+    foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design'], 'style' => ['clientstyleref', 'styleref', 'clientstyle', 'refno'], 'stone' => ['stonesetting', 'stone', 'settingtype'],
         'product' => ['product', 'category'], 'order' => ['orderqty', 'orderquantity', 'order'], 'ready' => ['readyqty', 'readyquantity', 'ready'],
         'scope' => ['qcscope', 'scope'], 'metal' => ['metal'], 'plating' => ['plating'], 'weight' => ['weight', 'targetweight'], 'length' => ['length'],
         'lock' => ['lock', 'locktype'], 'stamping' => ['stamping'], 'date' => ['requesteddate', 'qcdate', 'date'], 'spec' => ['specfile', 'spec', 'attachment']] as $k => $names) $map[$k] = $find($names);
@@ -57,8 +57,8 @@ if (is_post() && post('step') === 'upload') {
         if ($g('spec') === '') $w[] = 'Spec file missing';
         $rows[] = ['n' => $n + 2, 'vendor_id' => $v['id'] ?? null, 'vendor' => $v['name'] ?? $g('vendor'), 'po' => $po, 'sku' => $sku, 'product' => $g('product') ?: 'Necklace',
             'order' => $oq ?: $rq, 'ready' => $rq, 'scope' => $sc, 'metal' => $g('metal'), 'plating' => $g('plating'), 'weight' => $g('weight'), 'length' => $g('length'),
-            'lock' => $g('lock'), 'stamping' => $g('stamping'), 'date' => excel_date($g('date')), 'spec' => $g('spec'), 'errors' => $e, 'warnings' => $w,
-            'raw' => array_map(fn($c) => $map[$c] === null ? '' : ($r[$map[$c]] ?? ''), ['vendor', 'po', 'sku', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
+            'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => $g('stone'), 'date' => excel_date($g('date')), 'spec' => $g('spec'), 'errors' => $e, 'warnings' => $w,
+            'raw' => array_map(fn($c) => $map[$c] === null ? '' : ($r[$map[$c]] ?? ''), ['vendor', 'po', 'sku', 'style', 'stone', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
     }
     $saved = save_upload($f, 'imports', ['xlsx', 'csv', 'xls']);
     $_SESSION['import'] = ['client_id' => $cid, 'client' => $client['code'], 'file' => $f['name'], 'size' => $f['size'], 'rows' => $rows, 'path' => $saved['path'] ?? null];
@@ -80,7 +80,7 @@ if (is_post() && post('step') === 'create' && $imp) {
         foreach ($g as $r) {
             $plan = item_plan($job, $r['ready']);
             insert('qc_items', ['job_id' => $jid, 'sku' => $r['sku'], 'product' => $r['product'], 'metal' => $r['metal'], 'plating' => $r['plating'], 'target_weight' => $r['weight'],
-                'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'order_qty' => $r['order'], 'ready_qty' => $r['ready'],
+                'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'style_ref' => $r['style'] ?? '', 'stone_setting' => $r['stone'] ?? '', 'master_sample' => 'Approved Master Sample Available', 'order_qty' => $r['order'], 'ready_qty' => $r['ready'],
                 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'status' => 'PENDING', 'updated_at' => now()]);
         }
         if ($imp['path']) insert('attachments', ['job_id' => $jid, 'item_id' => null, 'path' => $imp['path'], 'name' => $imp['file'], 'created_at' => now()]);

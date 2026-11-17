@@ -37,19 +37,19 @@ function db_install(): void {
     $tables = [
         'settings' => "k VARCHAR(100) PRIMARY KEY, v TEXT",
         'clients' => "id $pk, code VARCHAR(20) NOT NULL UNIQUE, name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
-            address TEXT, report_format VARCHAR(100), aql_default VARCHAR(20) DEFAULT '2.5', major_limit DECIMAL(6,2) DEFAULT 2.5, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
-        'vendors' => "id $pk, code VARCHAR(30) NOT NULL UNIQUE, name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
+            address TEXT, report_format VARCHAR(100), aql_default VARCHAR(20) DEFAULT '2.5', major_limit DECIMAL(6,2) DEFAULT 2.5, fail_threshold DECIMAL(6,2) DEFAULT 80, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
+        'vendors' => "id $pk, code VARCHAR(30) NOT NULL UNIQUE, short_code VARCHAR(20), name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
             address TEXT, location $T, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
         'client_vendor' => "client_id INT NOT NULL, vendor_id INT NOT NULL, PRIMARY KEY (client_id, vendor_id)",
         'users' => "id $pk, name $T NOT NULL, email $T, emp_code VARCHAR(40), password_hash $T NOT NULL, role VARCHAR(30) NOT NULL,
-            client_id INT NULL, vendor_id INT NULL, phone VARCHAR(40), location $T, area $T, joined_on $D NULL,
+            client_id INT NULL, vendor_id INT NULL, phone VARCHAR(40), designation $T NULL, location $T, area $T, joined_on $D NULL,
             status VARCHAR(20) DEFAULT 'ACTIVE', last_login $DT NULL, created_at $DT",
         'product_categories' => "id $pk, name $T NOT NULL",
         'qc_types' => "id $pk, name $T NOT NULL",
         'defect_categories' => "id $pk, name $T NOT NULL, sort INT DEFAULT 0",
         'defect_master' => "id $pk, category_id INT NOT NULL, name $T NOT NULL, severity VARCHAR(20) DEFAULT 'MAJOR'",
-        'checkpoints' => "id $pk, client_id INT NULL, category $T NULL, name $T NOT NULL, sort INT DEFAULT 0",
-        'onsite_tests' => "id $pk, name $T NOT NULL, sort INT DEFAULT 0",
+        'checkpoints' => "id $pk, client_id INT NULL, category $T NULL, name $T NOT NULL, sort INT DEFAULT 0, pass_remark $T NULL, fail_remark $T NULL, na_remark $T NULL",
+        'onsite_tests' => "id $pk, name $T NOT NULL, sort INT DEFAULT 0, method $T NULL",
         'qc_jobs' => "id $pk, req_no VARCHAR(30) NOT NULL, job_no VARCHAR(30) NULL, source VARCHAR(30) DEFAULT 'Back Office',
             client_id INT NOT NULL, vendor_id INT NOT NULL, po_no VARCHAR(60) NOT NULL, qc_type $T, location $T,
             requested_date $D NULL, scheduled_date $D NULL, time_slot VARCHAR(20), priority VARCHAR(20) DEFAULT 'Normal',
@@ -60,7 +60,7 @@ function db_install(): void {
             created_by INT NULL, created_at $DT, scheduled_at $DT NULL, assigned_at $DT NULL, started_at $DT NULL,
             submitted_at $DT NULL, approved_at $DT NULL, emailed_at $DT NULL, closed_at $DT NULL, po_pdf $T NULL",
         'qc_items' => "id $pk, job_id INT NOT NULL, sku VARCHAR(80) NOT NULL, product $T, metal $T, plating $T, target_weight $T,
-            length $T, lock_type $T, stamping $T, width $T, thickness $T, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
+            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
             insp_qty INT DEFAULT 0, plan_json TEXT, status VARCHAR(20) DEFAULT 'PENDING', step INT DEFAULT 0,
             inspected_qty INT DEFAULT 0, accepted_qty INT DEFAULT 0, rejected_qty INT DEFAULT 0, reinspection INT DEFAULT 0,
             gps $T NULL, insp_date $D NULL, checks_json $TXT, meas_json $TXT, tests_json $TXT,
@@ -86,6 +86,21 @@ function db_install(): void {
     foreach ($idx as $t => $cs) foreach ($cs as $c) {
         try { db()->exec(is_sqlite() ? "CREATE INDEX IF NOT EXISTS ix_{$t}_$c ON $t($c)" : "CREATE INDEX ix_{$t}_$c ON $t($c)"); } catch (Throwable $e) {}
     }
+}
+/** Additive migrations for databases created by an earlier version. */
+function db_migrate(): void {
+    if ((int)setting('schema_version', '1') >= 2) return;
+    $T = 'VARCHAR(255)';
+    $cols = ['clients' => ['fail_threshold' => 'DECIMAL(6,2) DEFAULT 80'], 'vendors' => ['short_code' => 'VARCHAR(20)'], 'users' => ['designation' => "$T NULL"],
+        'checkpoints' => ['pass_remark' => "$T NULL", 'fail_remark' => "$T NULL", 'na_remark' => "$T NULL"], 'onsite_tests' => ['method' => "$T NULL"],
+        'qc_items' => ['style_ref' => "$T NULL", 'stone_setting' => "$T NULL", 'master_sample' => "$T NULL", 'lot_no' => "$T NULL", 'xrf_machine' => "$T NULL",
+                       'factory_coop' => 'VARCHAR(20) NULL', 'factory_line' => 'VARCHAR(20) NULL', 'factory_ready' => 'VARCHAR(20) NULL']];
+    foreach ($cols as $t => $cs) foreach ($cs as $c => $def) {
+        try { db()->query("SELECT $c FROM $t LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE $t ADD COLUMN $c $def"); }
+    }
+    require_once __DIR__ . '/seed.php';
+    seed_masters_v2(true);
+    set_setting('schema_version', '2');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

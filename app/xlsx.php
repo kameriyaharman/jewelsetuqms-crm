@@ -74,4 +74,4 @@ function xlsx_write(array $rows, string $sheetName = 'Sheet1'): string {
     $z->addFromString('xl/worksheets/sheet1.xml', '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' . $cols . '<sheetData>' . $data . '</sheetData></worksheet>');
     $z->close(); $out = file_get_contents($tmp); unlink($tmp); return $out;
 }
-const IMPORT_COLS = ['Vendor', 'PO No', 'SKU', 'Product', 'Order qty', 'Ready qty', 'QC scope', 'Metal', 'Plating', 'Weight', 'Length', 'Lock', 'Stamping', 'Requested date', 'Spec file'];
+const IMPORT_COLS = ['Vendor', 'PO No', 'SKU', 'Client Style Ref', 'Stone / Setting', 'Product', 'Order qty', 'Ready qty', 'QC scope', 'Metal', 'Plating', 'Weight', 'Length', 'Lock', 'Stamping', 'Requested date', 'Spec file'];

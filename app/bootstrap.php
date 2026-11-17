@@ -208,12 +208,18 @@ function next_job_no(): string {
     while (val('SELECT id FROM qc_jobs WHERE job_no=?', [sprintf('JS-%s-%04d', $y, $n)])) $n++;
     return sprintf('JS-%s-%04d', $y, $n);
 }
-function next_report_no(string $clientCode): string {
-    $p = 'JS_' . date('Y') . '_' . date('m') . '_' . strtoupper($clientCode) . '_';
-    $n = (int)val('SELECT COUNT(*) FROM qc_items WHERE report_no LIKE ?', [$p . '%']) + 1;
+/** Report no. as in sample: JS/{YYYY}/{MM}/{CLIENT}_{VENDOR}/{SERIAL} — serial per client+vendor per month */
+function next_report_no(array $job): string {
+    $p = 'JS/' . date('Y') . '/' . date('m') . '/' . strtoupper($job['client_code']) . '_' . vendor_short($job) . '/';
+    $n = (int)val("SELECT COUNT(*) FROM qc_items WHERE report_no LIKE ? AND report_no NOT LIKE ?", [$p . '%', $p . 'PO-%']) + 1;
     while (val('SELECT id FROM qc_items WHERE report_no=?', [$p . sprintf('%03d', $n)])) $n++;
     return $p . sprintf('%03d', $n);
 }
+function po_report_no(array $job): string {
+    $d = $job['approved_at'] ?: now();
+    return 'JS/' . date('Y', strtotime($d)) . '/' . date('m', strtotime($d)) . '/' . strtoupper($job['client_code']) . '_' . vendor_short($job) . '/PO-' . preg_replace('/[^A-Za-z0-9\-]/', '', (string)$job['po_no']);
+}
+function file_safe(string $s): string { return preg_replace('/[^A-Za-z0-9_\-]/', '_', $s); }
 /** sampling plan for one SKU given the job scope */
 function item_plan(array $job, int $ready): array {
     if ($job['scope'] === 'SAMPLE') return ['insp_qty' => min($ready, max(1, (int)($job['defined_qty'] ?: $ready))), 'plan' => null];
@@ -224,25 +230,40 @@ function item_plan(array $job, int $ready): array {
     if ($job['bulk_mode'] === 'DEFINED') return ['insp_qty' => min($ready, (int)$job['defined_qty']), 'plan' => null];
     return ['insp_qty' => $ready, 'plan' => null];
 }
-/** System recommendation PASS / FAIL */
-function system_result(array $job, array $item, array $defects, array $checks, array $meas, array $tests): string {
+/**
+ * System recommendation PASS / FAIL.
+ * AQL jobs: ISO 2859-1 Ac/Re per defect class.
+ * 100% / defined / sample jobs: client threshold rule — FAIL if Reject/Repair % >= client fail_threshold (default 80%).
+ */
+function system_result(array $job, array $item, array $defects, array $checks = [], array $meas = [], array $tests = []): string {
     $sev = ['CRITICAL' => 0, 'MAJOR' => 0, 'MINOR' => 0];
     foreach ($defects as $d) $sev[$d['severity']] = ($sev[$d['severity']] ?? 0) + (int)$d['qty'];
-    foreach ([$checks, $tests] as $set) foreach ($set as $c) if (($c['result'] ?? '') === 'FAIL') $failCheck = true;
-    foreach ($meas as $m) if (($m['result'] ?? '') === 'FAIL') $failCheck = true;
     $plan = jdec($item['plan_json'] ?? '', []);
     if ($job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL' && $plan) {
         foreach (['CRITICAL' => 'critical', 'MAJOR' => 'major', 'MINOR' => 'minor'] as $S => $k)
             if (isset($plan[$k]['re']) && $sev[$S] >= $plan[$k]['re']) return 'FAIL';
-        return !empty($failCheck) ? 'FAIL' : 'PASS';
+        return 'PASS';
     }
-    // 100% / defined / sample: any critical fails; major/minor against client threshold %
     $insp = max(1, (int)$item['inspected_qty']);
-    $limit = (float)($job['client_major_limit'] ?? 2.5);
-    if ($sev['CRITICAL'] > 0) return 'FAIL';
-    if ($sev['MAJOR'] * 100 / $insp > $limit) return 'FAIL';
-    if (!empty($failCheck)) return 'FAIL';
-    return 'PASS';
+    $thr = (float)($job['client_fail_threshold'] ?? 80) ?: 80;
+    return ((int)$item['rejected_qty'] * 100 / $insp) >= $thr ? 'FAIL' : 'PASS';
+}
+function client_threshold(int $clientId): float { return (float)(val('SELECT fail_threshold FROM clients WHERE id=?', [$clientId]) ?: 80); }
+function result_rule_text(array $job): string {
+    if ($job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL') return 'AQL ' . rtrim(rtrim((string)$job['aql_major'], '0'), '.') . ' (ISO 2859-1 Ac/Re)';
+    return 'Fail if >=' . rtrim(rtrim(number_format(client_threshold((int)$job['client_id']), 1), '0'), '.') . '% Rej/Repair';
+}
+function vendor_short(array $job): string {
+    $s = val('SELECT short_code FROM vendors WHERE id=?', [$job['vendor_id']]);
+    return strtoupper($s ?: preg_replace('/[^A-Z0-9]/', '', preg_replace('/^VND-?/i', '', strtoupper((string)val('SELECT code FROM vendors WHERE id=?', [$job['vendor_id']])))));
+}
+/** Report title as in the JEWELSETU sample, e.g. "100% PRE-SHIPMENT INSPECTION (PSI) REPORT" */
+function report_title(array $job): string {
+    $mode = $job['scope'] === 'SAMPLE' ? 'SAMPLE' : match ($job['bulk_mode']) { 'AQL' => 'AQL', 'DEFINED' => 'DEFINED SAMPLE', default => '100%' };
+    $t = strtolower((string)$job['qc_type']);
+    $type = match (true) { str_contains($t, 'inline') => 'INLINE INSPECTION (DUPRO)', str_contains($t, 'pre-production') => 'PRE-PRODUCTION INSPECTION (PPI)',
+        str_contains($t, 're-insp') => 'RE-INSPECTION', str_contains($t, 'final') => 'FINAL RANDOM INSPECTION (FRI)', default => 'PRE-SHIPMENT INSPECTION (PSI)' };
+    return "$mode $type REPORT";
 }
 function refresh_job_status(int $jobId): void {
     $items = all('SELECT status FROM qc_items WHERE job_id=?', [$jobId]);

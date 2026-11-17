@@ -14,30 +14,69 @@ function seed_all(bool $demo): void {
 
     foreach (['Necklace', 'Ring', 'Bracelet', 'Earrings', 'Pendant', 'Bangle', 'Chain', 'Anklet', 'Mangalsutra'] as $n) insert('product_categories', ['name' => $n]);
     foreach (['Pre-production', 'Inline', 'Pre-shipment', 'Re-inspection', 'Final random'] as $n) insert('qc_types', ['name' => $n]);
-    $defects = [
-        'Metal issue' => [['Porosity', 'MAJOR'], ['Crack in metal', 'CRITICAL'], ['Wrong metal purity', 'CRITICAL'], ['Dent / deformation', 'MAJOR']],
-        'Stone issue' => [['Stone missing', 'CRITICAL'], ['Stone loose', 'MAJOR'], ['Stone broken', 'MAJOR'], ['Wrong stone', 'CRITICAL'], ['Diamond cut mix', 'MAJOR'], ['Wrong colour', 'MINOR'], ['Wrong size', 'MAJOR']],
-        'Assembly issue' => [['Lock not working', 'MAJOR'], ['Jump ring open', 'MAJOR'], ['Solder mark', 'MINOR'], ['Chain kink', 'MINOR']],
-        'Stamping issue' => [['Stamping missing', 'MAJOR'], ['Wrong stamping', 'MAJOR'], ['Stamping unclear', 'MINOR']],
-        'Polish issue' => [['Dull polish', 'MINOR'], ['Scratches', 'MINOR'], ['Plating peel-off', 'MAJOR'], ['Uneven plating', 'MINOR']],
-        'Dimension issue' => [['Length short', 'MAJOR'], ['Weight out of tolerance', 'MAJOR'], ['Size mismatch', 'MAJOR']],
-        'Other' => [['Packaging damaged', 'MINOR'], ['Tag / label wrong', 'MINOR']],
-    ];
-    $s = 0;
-    foreach ($defects as $cat => $list) {
-        $cid = insert('defect_categories', ['name' => $cat, 'sort' => $s++]);
-        foreach ($list as [$n, $sev]) insert('defect_master', ['category_id' => $cid, 'name' => $n, 'severity' => $sev]);
-    }
-    foreach (['Design as per order', 'Dimension / shape / size', 'Weight verification', 'Surface quality', 'Stone security', 'Lock function', 'Stamping as per order', 'Packaging & tagging'] as $i => $n)
-        insert('checkpoints', ['client_id' => null, 'category' => null, 'name' => $n, 'sort' => $i]);
-    foreach (['Magnetic test', 'Tunch / Karat test', 'Rub test', 'Acid / XRF test'] as $i => $n) insert('onsite_tests', ['name' => $n, 'sort' => $i]);
+    seed_masters_v2(false);
+    set_setting('schema_version', '2');
 
     $pw = password_hash('Admin@123', PASSWORD_DEFAULT);
     insert('users', ['name' => 'Super Admin', 'email' => 'admin@jewelsetu.com', 'emp_code' => 'JS-001', 'password_hash' => $pw,
-        'role' => 'super_admin', 'location' => 'HQ', 'status' => 'ACTIVE', 'created_at' => $now]);
+        'role' => 'super_admin', 'location' => 'HQ', 'designation' => 'Principal Consultant', 'status' => 'ACTIVE', 'created_at' => $now]);
 
     if ($demo) seed_demo();
 }
+
+/** Report-sample masters: 12-point checkpoints, 8 on-site tests, defect categories, report terms. */
+function seed_masters_v2(bool $replace): void {
+    if ($replace) { foreach (['checkpoints', 'onsite_tests', 'defect_master', 'defect_categories'] as $t) db()->exec("DELETE FROM $t"); }
+    $ok = 'Verified OK as per Approved Sample & Spec'; $tol = 'Weight / Dimension within tolerance (±3% / ±0.2mm)'; $na = 'Not Applicable for this product style (N/A)';
+    $cps = [
+        ['Design & Style Accuracy as per Approved Sample / CAD', $ok, 'Design / style deviation from approved sample / CAD'],
+        ['Offered Quantity vs. PO Quantity Verification', $ok, 'Offered quantity does not match PO quantity'],
+        ['Dimension, Shape & Profile Accuracy', $tol, 'Dimension / shape out of tolerance'],
+        ['Stone Security, Prong / Bezel Setting Check', $ok, 'Loose stone / Prong or Bezel setting gap observed'],
+        ['Plating Thickness Check (XRF Micron Report)', 'XRF micron within specification', 'XRF Micron below spec / Plating off observed'],
+        ['Surface Quality Check (Scratches / Pits / Polish)', $ok, 'Surface scratches / Casting pits / Dull polish'],
+        ['Structural Integrity & Breakage Check', $ok, 'Breakage / weak joint observed'],
+        ['Plating Color Fastness & Batch Shade Matching', $ok, 'Shade variation vs approved master sample'],
+        ['Piece Weight Verification', $tol, 'Piece weight out of tolerance'],
+        ['Chain / Earring Drop Length Verification', $tol, 'Drop length out of tolerance'],
+        ['Polybag, Barcode & Packaging Compliance', 'Polybag, Barcode & Tagging verified OK', 'Packaging / barcode / tagging non-compliance'],
+        ['925 Stamping / Hallmarking & Logo Clarity', '925 Stamp / Hallmark clear & verified', 'Stamping / hallmark missing or unclear'],
+    ];
+    foreach ($cps as $i => [$n, $p, $f]) insert('checkpoints', ['client_id' => null, 'category' => null, 'name' => $n, 'sort' => $i, 'pass_remark' => $p, 'fail_remark' => $f, 'na_remark' => $na]);
+    foreach ([['Function & Lock Mechanism Test', 'Push-back / clasp tension checked'], ['Assembly & Soldering Strength Test', 'Post & setting joint integrity'],
+        ['Rub / Abrasion Test (Plating Adhesion)', 'Eraser / cloth rub test'], ['Tape Adhesion Test (3M / Scotch)', 'No plating peel-off observed'],
+        ['Drop Test (Standard Height)', 'No stone loosening or breakage'], ['Hardness Test (Pencil Method)', 'Lacquer / anti-tarnish hardness'],
+        ['Magnetic Test (Base Metal Check)', 'Non-magnetic 925 silver base'], ['Tunch / Purity & XRF Micron Check', 'XRF micron / purity reading']] as $i => [$n, $m])
+        insert('onsite_tests', ['name' => $n, 'sort' => $i, 'method' => $m]);
+    $defects = [
+        'Plating / Micron Issue' => [['Micron off / uneven plating thickness', 'CRITICAL'], ['Plating peel-off', 'MAJOR'], ['Plating shade mismatch', 'MAJOR'], ['Uneven plating', 'MINOR']],
+        'Metal / Casting Issue' => [['Surface pits / casting porosity', 'MAJOR'], ['Crack in metal', 'CRITICAL'], ['Wrong metal purity', 'CRITICAL'], ['Dent / deformation', 'MAJOR'], ['Bezel finish rough', 'MINOR']],
+        'Stone / Setting Issue' => [['Stone missing', 'CRITICAL'], ['Loose stone / uneven bezel setting gap', 'CRITICAL'], ['Stone broken / chipped', 'MAJOR'], ['Wrong stone', 'CRITICAL'], ['Diamond cut mix', 'MAJOR'], ['Stone colour mismatch', 'MINOR']],
+        'Polish / Surface Finish Issue' => [['Micro-scratches on surface', 'MAJOR'], ['Dull polish', 'MINOR'], ['Polish marks', 'MINOR']],
+        'Soldering / Linking Issue' => [['Weak solder joint', 'MAJOR'], ['Solder mark visible', 'MINOR'], ['Jump ring open', 'MAJOR']],
+        'Finding / Lock / Assembly Issue' => [['Clasp lock tension tight / loose', 'MAJOR'], ['Lock not working', 'CRITICAL'], ['Chain kink', 'MINOR']],
+        'Stamping / Hallmarking Issue' => [['Stamping missing', 'MAJOR'], ['Wrong stamping', 'MAJOR'], ['Stamping unclear', 'MINOR']],
+        'Dimension / Weight Issue' => [['Length short', 'MAJOR'], ['Weight out of tolerance', 'MAJOR'], ['Size mismatch', 'MAJOR']],
+        'Packaging / Tagging Issue' => [['Polybag / barcode wrong', 'MINOR'], ['Packaging damaged', 'MINOR']],
+    ];
+    $k = 0;
+    foreach ($defects as $cat => $list) { $cid = insert('defect_categories', ['name' => $cat, 'sort' => $k++]);
+        foreach ($list as [$n, $sev]) insert('defect_master', ['category_id' => $cid, 'name' => $n, 'severity' => $sev]); }
+    $S = ['report_header' => 'PRE-SHIPMENT INSPECTION (PSI) REPORT', 'company_name' => 'JEWELSETU QUALITY SERVICES', 'company_web' => 'www.jewelsetuqms.in',
+        'company_tagline' => 'Independent Jewellery Quality Assurance, Auditing & Process Consultancy',
+        'company_contact' => 'Web: www.jewelsetuqms.in | Email: info@jewelsetuqms.in / jewelsetu.jqc@gmail.com | Tel: +91 80059 33787 (Jaipur, India)',
+        'report_terms' => "1. 100% Piece-by-Piece Inspection: Conducted strictly against Client Approved Master Sample, CAD & PO Spec.\n2. 80%–100% Failure Threshold: A design lot is marked FAIL if ≥80% pieces require repair/rejection; below 80%, defective pieces are segregated for rework and balance lot passes.\n3. Liability & Impartiality: Report reflects physical condition at the time/place of inspection only. Re-inspection after rectification is mandatory for failed lots.\n4. Strict Confidentiality & IPR: Unauthorized editing, forgery, or circulation of this report is unlawful and strictly prohibited.",
+        'report_portfolio' => "• Third-Party Pre-Shipment (PSI) & Inline Inspections • XRF Micron & Purity Verification Audits\n• Vendor Factory QMS Audits & ISO 9001 / 17020 Setup • Lean Six Sigma Process & Casting/Setting Yield Improvement\nPARTNER WITH JEWELSETU FOR ZERO-DEFECT EXPORTS & DOMESTIC RETAIL:\nFounder & Principal Consultant: Sanket Shrivastava (20+ Yrs Global QA Leadership | GIA Diamond Graduate | Lean Six Sigma Black Belt)",
+        'report_footer' => 'Report reflects the condition of goods at the time and place of inspection.'];
+    foreach ($S as $kk => $v) set_setting($kk, $v);
+    if ($replace) {
+        q('UPDATE clients SET fail_threshold=80 WHERE fail_threshold IS NULL');
+        foreach (all('SELECT id, code FROM vendors WHERE short_code IS NULL') as $v) q('UPDATE vendors SET short_code=? WHERE id=?', [vendor_short_default($v['code']), $v['id']]);
+        q("UPDATE users SET designation='Principal Consultant' WHERE role='super_admin' AND designation IS NULL");
+        q("UPDATE users SET designation='QC Manager' WHERE role='qc_manager' AND designation IS NULL");
+    }
+}
+function vendor_short_default(string $code): string { $c = preg_replace('/^VND-?/i', '', strtoupper($code)); return substr(preg_replace('/[^A-Z0-9]/', '', $c), 0, 4) ?: 'V'; }
 
 function seed_demo(): void {
     $now = now(); $pw = password_hash('Demo@123', PASSWORD_DEFAULT);
@@ -49,7 +88,7 @@ function seed_demo(): void {
         ['SR', 'Shree Retail', 'Pooja Mehta', 'pooja@shreeretail.in', 'qc@shreeretail.in', 'Standard', '2.5', 'INACTIVE'],
     ] as [$code, $name, $ct, $em, $ho, $fmt, $aql, $st])
         $C[$code] = insert('clients', ['code' => $code, 'name' => $name, 'contact' => $ct, 'email' => $em, 'phone' => '+91 98290 1' . rand(1000, 9999),
-            'ho_email' => $ho, 'report_format' => $fmt, 'aql_default' => $aql, 'major_limit' => 2.5, 'status' => $st, 'created_at' => $now]);
+            'ho_email' => $ho, 'report_format' => $fmt, 'aql_default' => $aql, 'major_limit' => 2.5, 'fail_threshold' => 80, 'status' => $st, 'created_at' => $now]);
     $V = [];
     foreach ([
         ['VND-ASHOK', 'Ashok Jewels', 'Ashok Soni', 'vendor@ashokjewels.com', 'ho@ashokjewels.in', 'Plot 21, Sitapura Industrial Area, Jaipur', 'Sitapura, Jaipur'],
@@ -58,7 +97,7 @@ function seed_demo(): void {
         ['VND-SHREE', 'Shree Gems', 'Mahesh Shah', 'qc@shreegems.com', 'ho@shreegems.com', '2nd floor, Zaveri Bazaar, Mumbai', 'Zaveri Bazaar, Mumbai'],
         ['VND-LAXMI', 'Laxmi Arts', 'Ketan Patel', 'qc@laxmiarts.com', 'ho@laxmiarts.com', 'GIDC Metoda, Rajkot', 'Rajkot'],
     ] as [$code, $name, $ct, $em, $ho, $addr, $loc])
-        $V[$name] = insert('vendors', ['code' => $code, 'name' => $name, 'contact' => $ct, 'email' => $em, 'phone' => '+91 98' . rand(10000000, 99999999),
+        $V[$name] = insert('vendors', ['code' => $code, 'short_code' => ['VND-ASHOK' => 'AJ', 'VND-NIRVANA' => 'NV', 'VND-ABC' => 'ABC', 'VND-SHREE' => 'SG', 'VND-LAXMI' => 'LA'][$code] ?? vendor_short_default($code), 'name' => $name, 'contact' => $ct, 'email' => $em, 'phone' => '+91 98' . rand(10000000, 99999999),
             'ho_email' => $ho, 'address' => $addr, 'location' => $loc, 'status' => 'ACTIVE', 'created_at' => $now]);
     foreach ([['KP', 'Ashok Jewels'], ['KP', 'Nirvana'], ['KP', 'Shree Gems'], ['XYZ', 'Ashok Jewels'], ['XYZ', 'ABC Factory'], ['XYZ', 'Laxmi Arts'],
               ['ABC', 'Shree Gems'], ['ABC', 'Laxmi Arts'], ['SR', 'Nirvana']] as [$c, $v])
@@ -82,7 +121,7 @@ function seed_demo(): void {
         $U[$k] = insert('users', ['name' => $n, 'email' => $e, 'emp_code' => $code, 'password_hash' => $pw, 'role' => $r, 'client_id' => $cid,
             'vendor_id' => $vid, 'phone' => '+91 98' . rand(10000000, 99999999), 'location' => $loc,
             'area' => $r === 'inspector' ? ($loc === 'Jaipur' ? 'Sitapura, Mansarovar' : 'Andheri, Zaveri Bazaar') : null,
-            'joined_on' => '2024-03-12', 'status' => 'ACTIVE', 'created_at' => $now]);
+            'joined_on' => '2024-03-12', 'designation' => $r === 'qc_manager' ? 'QC Manager' : null, 'status' => 'ACTIVE', 'created_at' => $now]);
 
     $prod = [
         ['KNK01268FS0033', 'Necklace', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS'],
@@ -121,8 +160,8 @@ function seed_demo(): void {
         ['KP', 'Ashok Jewels', '82060', 'BULK', 'AQL', 'DRAFT', 6, null, [['BRC00218', 300, 280]], null],
     ];
     $sources = ['Back Office', 'Excel import', 'Vendor portal', 'Client portal'];
-    $checks = array_column(all('SELECT name FROM checkpoints ORDER BY sort'), 'name');
-    $tests = array_column(all('SELECT name FROM onsite_tests ORDER BY sort'), 'name');
+    $checks = all('SELECT * FROM checkpoints ORDER BY sort');
+    $tests = all('SELECT * FROM onsite_tests ORDER BY sort');
     $n = 101; $jn = 1;
     foreach ($jobs as $idx => [$c, $v, $po, $scope, $mode, $status, $off, $insp, $skus, $res]) {
         $d = date('Y-m-d', strtotime("$off days"));
@@ -145,7 +184,9 @@ function seed_demo(): void {
         foreach ($skus as $k => [$sku, $oq, $rq]) {
             $p = $P[$sku]; $plan = item_plan($job, $rq);
             $item = ['job_id' => $jid, 'sku' => $sku, 'product' => $p[1], 'metal' => $p[2], 'plating' => $p[3], 'target_weight' => $p[4], 'length' => $p[5],
-                'lock_type' => $p[6], 'stamping' => $p[7], 'width' => '4 mm', 'thickness' => '1.2 mm', 'order_qty' => $oq, 'ready_qty' => $rq,
+                'lock_type' => $p[6], 'stamping' => $p[7], 'width' => '4 mm', 'thickness' => '1.2 mm',
+                'style_ref' => $c . '-' . substr($sku, -6), 'stone_setting' => in_array($p[1], ['Ring', 'Earrings', 'Pendant', 'Necklace'], true) ? 'CZ / Prong setting' : '—',
+                'master_sample' => 'Approved Master Sample Available', 'order_qty' => $oq, 'ready_qty' => $rq,
                 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'status' => 'PENDING', 'updated_at' => $now];
             $iid = insert('qc_items', $item);
             $mode2 = $res;
@@ -160,40 +201,50 @@ function seed_demo(): void {
 
 function seed_inspection(int $iid, array $job, array $item, string $res, int $off, array $checks, array $tests, array $U): void {
     $insp = (int)$item['insp_qty']; $dt = date('Y-m-d 15:42:00', strtotime("$off days"));
-    $rej = match ($res) { 'PASS' => (int)floor($insp * 0.008), 'FAIL', 'FAIL_SUB' => max(3, (int)round($insp * 0.065)), 'CONDITIONAL' => 0, 'PROGDONE' => 12, default => 0 };
+    $rej = match ($res) { 'PASS' => (int)floor($insp * 0.008), 'FAIL', 'FAIL_SUB' => max(3, (int)round($insp * 0.86)), 'CONDITIONAL' => 0, 'PROGDONE' => 12, default => 0 };
     if (in_array($res, ['HOLD'], true)) {
         update('qc_items', ['status' => 'HOLD', 'step' => 3, 'hold_for' => 'client', 'hold_status' => 'PENDING',
             'hold_reason' => 'Centre stone shade differs from approved sample (lighter blue). Please confirm whether to proceed.',
             'hold_by' => 'JS-010 · Rahul Sharma', 'hold_at' => now(), 'started_at' => now()], 'id=?', [$iid]);
         return;
     }
-    $C = []; foreach ($checks as $c) $C[] = ['name' => $c, 'result' => 'PASS', 'remark' => ''];
-    if (in_array($res, ['FAIL', 'FAIL_SUB'], true)) { $C[4]['result'] = 'FAIL'; $C[4]['remark'] = 'Centre stone cut mismatch'; }
-    $T = []; foreach ($tests as $t) $T[] = ['name' => $t, 'qty' => 2, 'result' => 'PASS', 'remark' => ''];
-    $M = [['param' => 'Weight', 'spec' => '2.75', 'tol' => '0.05', 'unit' => 'g', 'actual' => '2.76', 'result' => 'PASS'],
-          ['param' => 'Length', 'spec' => '18', 'tol' => '0.2', 'unit' => 'in', 'actual' => $res === 'CONDITIONAL' ? '17.6' : '18.1', 'result' => $res === 'CONDITIONAL' ? 'FAIL' : 'PASS'],
-          ['param' => 'Width', 'spec' => '4', 'tol' => '0.2', 'unit' => 'mm', 'actual' => '4.0', 'result' => 'PASS'],
-          ['param' => 'Thickness', 'spec' => '1.2', 'tol' => '0.1', 'unit' => 'mm', 'actual' => '1.1', 'result' => 'PASS']];
+    $fail = in_array($res, ['FAIL', 'FAIL_SUB'], true);
+    $C = []; foreach ($checks as $i => $c) {
+        $r = ($fail && in_array($i, [3, 5], true)) ? 'FAIL' : ($i === 9 && !in_array($item['product'], ['Necklace', 'Chain', 'Earrings'], true) ? 'NA' : 'PASS');
+        $C[] = ['name' => $c['name'], 'result' => $r, 'remark' => $r === 'FAIL' ? $c['fail_remark'] : ($r === 'NA' ? $c['na_remark'] : $c['pass_remark'])]; }
+    $T = []; foreach ($tests as $i => $t) { $r = str_starts_with($t['name'], 'Magnetic') && str_contains((string)$item['metal'], 'Gold') ? 'NA' : ($fail && $i === 7 ? 'FAIL' : 'PASS');
+        $T[] = ['name' => $t['name'], 'qty' => $r === 'NA' ? 'NA' : 2, 'result' => $r, 'remark' => $r === 'FAIL' ? 'XRF micron reading below 1.0 µm on spots' : $t['method']]; }
+    $M = [['param' => 'Weight', 'spec' => '2.75', 'tol' => '0.05', 'unit' => 'g', 'qty' => 2, 'actual' => '2.76', 'result' => 'PASS'],
+          ['param' => 'Length', 'spec' => '18', 'tol' => '0.2', 'unit' => 'in', 'qty' => 2, 'actual' => $res === 'CONDITIONAL' ? '17.6' : '18.1', 'result' => $res === 'CONDITIONAL' ? 'FAIL' : 'PASS'],
+          ['param' => 'Width', 'spec' => '4', 'tol' => '0.2', 'unit' => 'mm', 'qty' => 2, 'actual' => '4.0', 'result' => 'PASS'],
+          ['param' => 'Thickness', 'spec' => '1.2', 'tol' => '0.1', 'unit' => 'mm', 'qty' => 2, 'actual' => '1.1', 'result' => 'PASS']];
     $defs = [];
     if ($rej > 0) {
-        $pool = [['Stone issue', 'Diamond cut mix', 'MAJOR'], ['Polish issue', 'Dull polish', 'MINOR'], ['Assembly issue', 'Lock not working', 'MAJOR'], ['Stamping issue', 'Stamping unclear', 'MINOR']];
-        $pick = $pool[$iid % 4];
-        if (in_array($res, ['FAIL', 'FAIL_SUB'], true)) $pick = $pool[$iid % 2 === 0 ? 0 : 2];
-        $defs[] = ['category' => $pick[0], 'type' => $pick[1], 'severity' => $pick[2], 'qty' => $rej];
+        if ($fail) {
+            $a = (int)round($rej * 0.55); $b = (int)round($rej * 0.3); $c = $rej - $a - $b;
+            $defs[] = ['category' => 'Plating / Micron Issue', 'type' => 'Micron off / uneven plating thickness', 'severity' => 'CRITICAL', 'qty' => $a];
+            $defs[] = ['category' => 'Stone / Setting Issue', 'type' => 'Loose stone / uneven bezel setting gap', 'severity' => 'MAJOR', 'qty' => $b];
+            if ($c > 0) $defs[] = ['category' => 'Polish / Surface Finish Issue', 'type' => 'Micro-scratches on surface', 'severity' => 'MINOR', 'qty' => $c];
+        } else {
+            $pool = [['Polish / Surface Finish Issue', 'Polish marks', 'MINOR'], ['Finding / Lock / Assembly Issue', 'Clasp lock tension tight / loose', 'MAJOR'], ['Stamping / Hallmarking Issue', 'Stamping unclear', 'MINOR']];
+            $pick = $pool[$iid % 3]; $defs[] = ['category' => $pick[0], 'type' => $pick[1], 'severity' => $pick[2], 'qty' => $rej];
+        }
     }
     foreach ($defs as $d) insert('item_defects', ['item_id' => $iid] + $d + ['remark' => '']);
     $status = match ($res) { 'FAIL_SUB' => 'SUBMITTED', 'PROGDONE' => 'COMPLETED', default => 'APPROVED' };
     $final = $res === 'FAIL_SUB' || $res === 'PROGDONE' ? null : $res;
     $data = ['status' => $status, 'step' => 8, 'inspected_qty' => $insp, 'accepted_qty' => $insp - $rej, 'rejected_qty' => $rej, 'insp_date' => substr($dt, 0, 10),
-        'gps' => '26.7838, 75.8216 · ' . date('h:i A', strtotime($dt)), 'checks_json' => json_encode($C), 'meas_json' => json_encode($M), 'tests_json' => json_encode($T),
-        'remark' => $rej ? "$rej pcs found with " . strtolower($defs[0]['type']) . '.' : 'All checkpoints satisfactory.',
-        'action_required' => $rej ? 'Vendor to rework rejected pieces and offer for re-inspection.' : '',
+        'gps' => '26.7838, 75.8216 · ' . date('h:i A', strtotime($dt)), 'lot_no' => 'LOT-' . strtoupper(date('M-d', strtotime($dt))) . 'A', 'xrf_machine' => 'Goldscope SD 550',
+        'factory_coop' => 'GOOD', 'factory_line' => $fail ? 'AVERAGE' : 'GOOD', 'factory_ready' => $fail ? 'AVERAGE' : 'GOOD', 'checks_json' => json_encode($C), 'meas_json' => json_encode($M), 'tests_json' => json_encode($T),
+        'remark' => $fail ? "$rej pcs failed due to micron thickness below spec on XRF and bezel setting gaps." : ($rej ? "$rej pcs " . strtolower($defs[0]['type']) . ' segregated for rework; balance lot passes.' : 'All pieces passed 100% check.'),
+        'action_required' => $fail ? 'Factory advised to strip, re-polish, rectify setting and re-plate to ≥1.0 micron before offering for re-inspection.' : ($rej ? 'Rework segregated pieces before dispatch.' : ''),
         'system_result' => $res === 'CONDITIONAL' ? 'FAIL' : (in_array($res, ['FAIL', 'FAIL_SUB'], true) ? 'FAIL' : 'PASS'),
         'inspector_result' => $res === 'CONDITIONAL' ? 'CONDITIONAL' : (in_array($res, ['FAIL', 'FAIL_SUB'], true) ? 'FAIL' : 'PASS'),
         'final_result' => $final, 'submitted_at' => $dt, 'started_at' => date('Y-m-d 10:34:00', strtotime("$off days"))];
     if ($status === 'APPROVED') {
         $code = val('SELECT code FROM clients WHERE id=?', [$job['client_id']]);
-        $data += ['report_no' => sprintf('JS_%s_%s_%s_%03d', date('Y', strtotime($dt)), date('m', strtotime($dt)), $code, (int)val('SELECT COUNT(*) FROM qc_items WHERE report_no LIKE ?', ['JS_' . date('Y_m', strtotime($dt)) . '_' . $code . '_%']) + 1),
+        $pre = 'JS/' . date('Y/m', strtotime($dt)) . '/' . $code . '_' . vendor_short($job) . '/';
+        $data += ['report_no' => $pre . sprintf('%03d', (int)val('SELECT COUNT(*) FROM qc_items WHERE report_no LIKE ?', [$pre . '%']) + 1),
             'locked' => 1, 'approved_at' => date('Y-m-d 16:05:00', strtotime("$off days")), 'approved_by' => $U['ravi']];
         if ($res === 'CONDITIONAL') {
             $data['manager_note'] = 'All other checks PASS. Length short by 0.4" across the lot; chain extender can compensate. Recommend conditional acceptance.';

@@ -34,7 +34,7 @@ if (is_post()) {
         if ($rq <= 0) $err[] = "SKU $sku: Ready qty must be more than 0.";
         if ($scope === 'BULK' && $mode === 'DEFINED' && (int)post('defined_qty') > $rq) $err[] = "SKU $sku: Defined sample qty is more than Ready qty.";
         $rows[] = ['k' => $k, 'id' => (int)($_POST['item_id'][$k] ?? 0), 'sku' => strtoupper($sku)] + array_map(fn($f) => trim((string)($_POST[$f][$k] ?? '')), array_combine(
-            ['product', 'metal', 'plating', 'target_weight', 'length', 'lock_type', 'stamping'], ['product', 'metal', 'plating', 'target_weight', 'length', 'lock_type', 'stamping'])) + ['order_qty' => $oq, 'ready_qty' => $rq];
+            ['product', 'style_ref', 'metal', 'plating', 'stone_setting', 'target_weight', 'length', 'lock_type', 'stamping'], ['product', 'style_ref', 'metal', 'plating', 'stone_setting', 'target_weight', 'length', 'lock_type', 'stamping'])) + ['order_qty' => $oq, 'ready_qty' => $rq];
     }
     if (!$rows) $err[] = 'Add at least one SKU / design.';
     $skus = array_column($rows, 'sku'); if (count($skus) !== count(array_unique($skus))) $err[] = 'Duplicate SKU in this request.';
@@ -86,8 +86,8 @@ $J = $job ?? ['client_id' => $r === 'client' ? $u['client_id'] : (count($clients
     'po_no' => '', 'qc_type' => 'Pre-shipment', 'location' => '', 'requested_date' => date('Y-m-d', strtotime('+2 days')), 'scope' => 'BULK', 'bulk_mode' => '100',
     'insp_level' => 'II', 'aql_critical' => 0, 'aql_major' => 1.5, 'aql_minor' => 4.0, 'defined_qty' => 0, 'allow_excess' => 0, 'specs' => '', 'special_req' => '', 'req_no' => next_req_no(), 'status' => 'DRAFT'];
 if ($old) foreach ($J as $k => $v) if (isset($old[$k])) $J[$k] = $old[$k];
-if (!$items) $items = [['id' => 0, 'sku' => '', 'product' => '', 'metal' => '925 Silver', 'plating' => '', 'target_weight' => '', 'length' => '', 'lock_type' => '', 'stamping' => '', 'order_qty' => '', 'ready_qty' => '']];
-if ($old && !empty($old['sku'])) { $items = []; foreach ($old['sku'] as $k => $s) { $it = ['id' => $old['item_id'][$k] ?? 0, 'sku' => $s]; foreach (['product', 'metal', 'plating', 'target_weight', 'length', 'lock_type', 'stamping', 'order_qty', 'ready_qty'] as $f) $it[$f] = $old[$f][$k] ?? ''; $items[] = $it; } }
+if (!$items) $items = [['id' => 0, 'sku' => '', 'product' => '', 'style_ref' => '', 'stone_setting' => '', 'metal' => '925 Silver', 'plating' => '', 'target_weight' => '', 'length' => '', 'lock_type' => '', 'stamping' => '', 'order_qty' => '', 'ready_qty' => '']];
+if ($old && !empty($old['sku'])) { $items = []; foreach ($old['sku'] as $k => $s) { $it = ['id' => $old['item_id'][$k] ?? 0, 'sku' => $s]; foreach (['product', 'style_ref', 'metal', 'plating', 'stone_setting', 'target_weight', 'length', 'lock_type', 'stamping', 'order_qty', 'ready_qty'] as $f) $it[$f] = $old[$f][$k] ?? ''; $items[] = $it; } }
 $cats = array_column(all('SELECT name FROM product_categories ORDER BY name'), 'name');
 $types = array_column(all('SELECT name FROM qc_types ORDER BY id'), 'name');
 $atts = $job ? all('SELECT * FROM attachments WHERE job_id=?', [$job['id']]) : [];
@@ -115,15 +115,17 @@ layout_start($job ? 'Edit QC Request' : 'New QC Request', 'request-new', '', 'Sa
 </div>
 <div class="card">
   <div class="card-h"><h2>Product / SKU line items</h2><button type="button" class="btn sm" onclick="addSku()"><?= icon('plus') ?> Add SKU</button></div>
-  <div class="tbl-wrap"><table class="t" id="skus"><tr><th>#</th><th>SKU / Design no.</th><th>Product</th><th>Metal</th><th>Plating</th><th>Wt.</th><th>Length</th><th>Lock</th><th>Stamping</th><th>Order qty</th><th>Ready qty</th><th>Spec / file</th><th></th></tr>
+  <div class="tbl-wrap"><table class="t" id="skus"><tr><th>#</th><th>SKU / Design no.</th><th>Product</th><th>Client style / ref</th><th>Metal</th><th>Plating</th><th>Stone / setting</th><th>Wt.</th><th>Length</th><th>Lock</th><th>Stamping</th><th>Order qty</th><th>Ready qty</th><th>Product image / spec</th><th></th></tr>
   <?php foreach ($items as $k => $it): ?>
   <tr><td class="rn"><?= $k + 1 ?></td><td><input type="hidden" name="item_id[]" value="<?= (int)$it['id'] ?>"><input type="text" name="sku[]" value="<?= h($it['sku']) ?>" style="min-width:140px" required></td>
     <td><select name="product[]" style="min-width:100px"><?php foreach ($cats as $c): ?><option <?= $it['product'] === $c ? 'selected' : '' ?>><?= h($c) ?></option><?php endforeach ?></select></td>
+    <td><input type="text" name="style_ref[]" value="<?= h($it['style_ref'] ?? '') ?>" style="min-width:100px"></td>
     <td><input type="text" name="metal[]" value="<?= h($it['metal']) ?>" style="min-width:90px"></td><td><input type="text" name="plating[]" value="<?= h($it['plating']) ?>" style="min-width:90px"></td>
+    <td><input type="text" name="stone_setting[]" value="<?= h($it['stone_setting'] ?? '') ?>" style="min-width:110px" placeholder="Topaz / Bezel"></td>
     <td><input type="text" name="target_weight[]" value="<?= h($it['target_weight']) ?>" style="width:70px"></td><td><input type="text" name="length[]" value="<?= h($it['length']) ?>" style="width:80px"></td>
     <td><input type="text" name="lock_type[]" value="<?= h($it['lock_type']) ?>" style="width:90px"></td><td><input type="text" name="stamping[]" value="<?= h($it['stamping']) ?>" style="width:110px"></td>
     <td><input type="number" name="order_qty[]" value="<?= h($it['order_qty']) ?>" min="0" style="width:85px" class="oq"></td><td><input type="number" name="ready_qty[]" value="<?= h($it['ready_qty']) ?>" min="1" style="width:85px" class="rq" required></td>
-    <td><input type="file" name="row_file[<?= $k ?>]" style="width:150px;font-size:11px"></td><td><button type="button" class="btn sm ghost" onclick="delSku(this)">✕</button></td></tr>
+    <td><input type="file" name="row_file[<?= $k ?>]" style="width:150px;font-size:11px" title="Product image (JPG/PNG) or spec file"></td><td><button type="button" class="btn sm ghost" onclick="delSku(this)">✕</button></td></tr>
   <?php endforeach ?></table></div>
   <div class="actions mt"><label class="chk"><input type="checkbox" name="allow_excess" value="1" id="allow_excess" <?= $J['allow_excess'] ? 'checked' : '' ?>> Allow excess quantity (Ready &gt; Order)</label>
     <span class="right muted" id="qtywarn"></span></div>

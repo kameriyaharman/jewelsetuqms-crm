@@ -5,7 +5,7 @@ require_once __DIR__ . '/mailer.php';
 /** QC manager approval: lock, number, generate immutable PDF. */
 function approve_item(int $itemId, string $final, string $note, array $deviation = []): array {
     $it = one('SELECT * FROM qc_items WHERE id=?', [$itemId]); $job = job_load((int)$it['job_id']);
-    $no = $it['report_no'] ?: next_report_no($job['client_code']);
+    $no = $it['report_no'] ?: next_report_no($job);
     $d = ['status' => 'APPROVED', 'final_result' => $final, 'manager_note' => $note, 'report_no' => $no, 'locked' => 1,
         'approved_at' => now(), 'approved_by' => user()['id'], 'return_sections' => null];
     if ($final === 'CONDITIONAL') {

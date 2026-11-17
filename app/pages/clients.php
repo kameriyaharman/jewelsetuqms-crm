@@ -4,7 +4,7 @@ if (is_post() && $canEdit) {
     $id = (int)post('id');
     $d = ['code' => strtoupper(trim((string)post('code'))), 'name' => trim((string)post('name')), 'contact' => post('contact'), 'email' => post('email'),
         'phone' => post('phone'), 'ho_email' => post('ho_email'), 'address' => post('address'), 'report_format' => post('report_format'),
-        'aql_default' => post('aql_default') ?: '2.5', 'major_limit' => (float)(post('major_limit') ?: 2.5), 'status' => post('status', 'ACTIVE')];
+        'aql_default' => post('aql_default') ?: '2.5', 'fail_threshold' => (float)(post('fail_threshold') ?: 80), 'status' => post('status', 'ACTIVE')];
     if (!$d['code'] || !$d['name']) { flash('Code and name are required.', 'err'); back(); }
     if (one('SELECT id FROM clients WHERE code=? AND id<>?', [$d['code'], $id])) { flash('Client code already exists.', 'err'); back(); }
     if ($id) { update('clients', $d, 'id=?', [$id]); audit('client', $id, 'UPDATE'); }
@@ -45,7 +45,7 @@ layout_start('Client Management', 'clients', $canEdit ? btn(icon('plus') . ' Add
   $all = sum_items(approved_items(['client_id' => $sel['id']])); ?>
 <div class="card"><div class="card-h"><h2>Client profile — <?= h($sel['code']) ?></h2><a href="<?= url('requests', ['client' => $sel['id']]) ?>">Open QC requests</a></div>
   <div class="kv"><div><small>Head office email (auto-CC)</small><b><?= h($sel['ho_email']) ?></b></div><div><small>Report format</small><b><?= h($sel['report_format']) ?></b></div>
-  <div><small>Default QC criteria</small><b>AQL <?= h($sel['aql_default']) ?> · Major ≤ <?= h($sel['major_limit']) ?>%</b></div>
+  <div><small>Default QC criteria</small><b>Fail if ≥<?= h(rtrim(rtrim((string)$sel['fail_threshold'], '0'), '.')) ?>% Rej/Repair · AQL <?= h($sel['aql_default']) ?></b></div>
   <div><small>Vendors</small><b><?= h(implode(', ', array_column(all('SELECT v.name FROM client_vendor m JOIN vendors v ON v.id=m.vendor_id WHERE m.client_id=?', [$sel['id']]), 'name')) ?: '—') ?></b></div>
   <div><small>QC this month</small><b><?= $s['n'] ?></b></div><div><small>Rejection % (all time)</small><b><?= number_format($all['rate'], 1) ?>%</b></div></div>
 </div><?php endif ?>
@@ -61,7 +61,7 @@ layout_start('Client Management', 'clients', $canEdit ? btn(icon('plus') . ' Add
   <div class="f"><label>Address</label><textarea name="address"><?= h($c['address'] ?? '') ?></textarea></div>
   <div class="fr f"><div><label>Report format</label><input type="text" name="report_format" value="<?= h($c['report_format'] ?? 'Standard') ?>"></div>
     <div><label>Default AQL</label><input type="text" name="aql_default" value="<?= h($c['aql_default'] ?? '2.5') ?>"></div></div>
-  <div class="fr f"><div><label>Major defect limit % (non-AQL)</label><input type="number" step="0.1" name="major_limit" value="<?= h($c['major_limit'] ?? '2.5') ?>"></div>
+  <div class="fr f"><div><label>Pass / fail rule — FAIL if Rej/Repair % ≥</label><input type="number" step="1" min="1" max="100" name="fail_threshold" value="<?= h($c['fail_threshold'] ?? '80') ?>"></div>
     <div><label>Status</label><?= sel('status', ['ACTIVE' => 'Active', 'INACTIVE' => 'Inactive'], $c['status'] ?? 'ACTIVE') ?></div></div>
   <div class="f"><label>Mapped vendors</label><select name="vendors[]" multiple size="5"><?php foreach ($vendors as $v): ?><option value="<?= $v['id'] ?>" <?= in_array($v['id'], $mapped) ? 'selected' : '' ?>><?= h($v['name']) ?></option><?php endforeach ?></select><small>Ctrl/Cmd-click to select several</small></div>
   <label class="chk f"><input type="checkbox" name="create_login" value="1" onchange="lp.style.display=this.checked?'block':'none'"> Create client portal login (uses email above)</label>

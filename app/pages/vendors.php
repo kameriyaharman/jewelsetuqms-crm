@@ -2,7 +2,7 @@
 $canEdit = is_role('super_admin', 'back_office');
 if (is_post() && $canEdit) {
     $id = (int)post('id');
-    $d = ['code' => strtoupper(trim((string)post('code'))), 'name' => trim((string)post('name')), 'contact' => post('contact'), 'email' => post('email'),
+    $d = ['code' => strtoupper(trim((string)post('code'))), 'short_code' => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)post('short_code'))) ?: null, 'name' => trim((string)post('name')), 'contact' => post('contact'), 'email' => post('email'),
         'phone' => post('phone'), 'ho_email' => post('ho_email'), 'address' => post('address'), 'location' => post('location'), 'status' => post('status', 'ACTIVE')];
     if (!$d['code'] || !$d['name']) { flash('Vendor code and name are required.', 'err'); back(); }
     if (one('SELECT id FROM vendors WHERE code=? AND id<>?', [$d['code'], $id])) { flash('Vendor code already exists.', 'err'); back(); }
@@ -68,7 +68,7 @@ layout_start(role() === 'client' ? 'My Vendors' : 'Vendor Management', 'vendors'
   $hasLogin = $sel ? one('SELECT * FROM users WHERE vendor_id=?', [$sel['id']]) : null; ?>
 <div class="card"><h2 class="mb"><?= $sel ? 'Edit vendor' : 'Add vendor' ?></h2>
 <form method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)($v['id'] ?? 0) ?>">
-  <div class="fr f"><div><label>Vendor code (portal login)</label><input type="text" name="code" required value="<?= h($v['code'] ?? 'VND-') ?>"></div><div><label>Status</label><?= sel('status', ['ACTIVE' => 'Active', 'INACTIVE' => 'Inactive'], $v['status'] ?? 'ACTIVE') ?></div></div>
+  <div class="fr f"><div><label>Vendor code (portal login)</label><input type="text" name="code" required value="<?= h($v['code'] ?? 'VND-') ?>"></div><div><label>Report code (e.g. GL)</label><input type="text" name="short_code" maxlength="8" value="<?= h($v['short_code'] ?? '') ?>" placeholder="used in report no."></div><div><label>Status</label><?= sel('status', ['ACTIVE' => 'Active', 'INACTIVE' => 'Inactive'], $v['status'] ?? 'ACTIVE') ?></div></div>
   <div class="f"><label>Vendor / factory name</label><input type="text" name="name" required value="<?= h($v['name'] ?? '') ?>"></div>
   <div class="f"><label>Contact person</label><input type="text" name="contact" value="<?= h($v['contact'] ?? '') ?>"></div>
   <div class="fr f"><div><label>Email (reports go here)</label><input type="email" name="email" value="<?= h($v['email'] ?? '') ?>"></div><div><label>Phone</label><input type="text" name="phone" value="<?= h($v['phone'] ?? '') ?>"></div></div>

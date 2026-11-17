@@ -5,7 +5,7 @@ if (is_post() && $canEdit) {
     $role = (string)post('role');
     if (!isset(ROLES[$role])) { flash('Invalid role', 'err'); back(); }
     $d = ['name' => trim((string)post('name')), 'email' => trim((string)post('email')) ?: null, 'emp_code' => strtoupper(trim((string)post('emp_code'))) ?: null, 'role' => $role,
-        'phone' => post('phone'), 'location' => post('location'), 'area' => post('area'), 'joined_on' => post('joined_on') ?: null, 'status' => post('status', 'ACTIVE'),
+        'phone' => post('phone'), 'designation' => post('designation') ?: null, 'location' => post('location'), 'area' => post('area'), 'joined_on' => post('joined_on') ?: null, 'status' => post('status', 'ACTIVE'),
         'client_id' => $role === 'client' ? ((int)post('client_id') ?: null) : null, 'vendor_id' => $role === 'vendor' ? ((int)post('vendor_id') ?: null) : null];
     if (!$d['name'] || (!$d['email'] && !$d['emp_code'])) { flash('Name and email or login code are required.', 'err'); back(); }
     if ($role === 'client' && !$d['client_id']) { flash('Select the client for this login.', 'err'); back(); }
@@ -59,6 +59,7 @@ $tab = fn($k, $l) => '<a class="' . ($f === $k ? 'on' : '') . '" href="' . url('
   <div class="fr f"><div><label>Employee ID / login code</label><input type="text" name="emp_code" value="<?= h($u['emp_code'] ?? '') ?>" placeholder="JS-014 / VND-XYZ"></div><div><label>Email</label><input type="email" name="email" value="<?= h($u['email'] ?? '') ?>"></div></div>
   <div class="f" id="cl"><label>Client (for client login)</label><?= sel('client_id', array_column(all('SELECT id, code FROM clients ORDER BY code'), 'code', 'id'), $u['client_id'] ?? '', '', 'Select') ?></div>
   <div class="f" id="vl"><label>Vendor (for vendor login)</label><?= sel('vendor_id', array_column(all('SELECT id, name FROM vendors ORDER BY name'), 'name', 'id'), $u['vendor_id'] ?? '', '', 'Select') ?></div>
+  <div class="f"><label>Designation (printed on reports for approvers)</label><input type="text" name="designation" value="<?= h($u['designation'] ?? '') ?>" placeholder="Principal Consultant"></div>
   <div class="fr f"><div><label>Mobile</label><input type="text" name="phone" value="<?= h($u['phone'] ?? '') ?>"></div><div><label>Location</label><input type="text" name="location" value="<?= h($u['location'] ?? '') ?>"></div></div>
   <div class="fr f"><div><label>Assigned area</label><input type="text" name="area" value="<?= h($u['area'] ?? '') ?>"></div><div><label>Joining date</label><input type="date" name="joined_on" value="<?= h($u['joined_on'] ?? '') ?>"></div></div>
   <div class="fr f"><div><label>Status</label><?= sel('status', ['ACTIVE' => 'Active', 'INACTIVE' => 'Inactive'], $u['status'] ?? 'ACTIVE') ?></div><div><label><?= $sel ? 'Reset password' : 'Password (blank = auto)' ?></label><input type="text" name="password"></div></div>

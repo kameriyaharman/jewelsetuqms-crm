@@ -3,11 +3,18 @@
 require __DIR__ . '/app/bootstrap.php';
 
 try {
+    // one-time demo reset on hosting (set RESET_DEMO to a new value to wipe & reseed once)
+    if (($rd = getenv('RESET_DEMO')) && db_ready() && setting('demo_reset_token') !== $rd) {
+        foreach (['settings', 'clients', 'vendors', 'client_vendor', 'users', 'product_categories', 'qc_types', 'defect_categories', 'defect_master', 'checkpoints', 'onsite_tests',
+                  'qc_jobs', 'qc_items', 'item_defects', 'item_photos', 'attachments', 'audit_log', 'email_log', 'notifications'] as $t) db()->exec("DROP TABLE IF EXISTS $t");
+        require __DIR__ . '/app/seed.php'; db_install(); seed_all(true); set_setting('demo_reset_token', $rd);
+    }
     if (!db_ready()) {
-        require __DIR__ . '/app/seed.php';
+        require_once __DIR__ . '/app/seed.php';
         db_install();
         seed_all($CFG['seed_demo']);
     }
+    db_migrate();
 } catch (Throwable $e) {
     http_response_code(500);
     echo '<h2 style="font-family:sans-serif">Database connection failed</h2><p style="font-family:sans-serif">Check config.local.php / environment variables.</p>';
