@@ -1,0 +1,7 @@
+config.local.php
+storage/*
+!storage/.keep
+!storage/.htaccess
+uploads/*
+!uploads/.keep
+!uploads/.htaccess

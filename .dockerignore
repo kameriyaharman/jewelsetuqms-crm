@@ -1,0 +1,6 @@
+.git
+storage/*.sqlite*
+uploads/*
+!uploads/.keep
+!uploads/.htaccess
+config.local.php
