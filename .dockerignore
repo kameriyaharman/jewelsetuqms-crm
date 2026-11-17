@@ -1,6 +1,6 @@
 .git
-storage/*.sqlite*
-uploads/*
-!uploads/.keep
-!uploads/.htaccess
-config.local.php
+frontend/node_modules
+www/server/storage/*.sqlite*
+www/server/uploads/*
+!www/server/uploads/.keep
+www/server/config.local.php

@@ -1,7 +1,7 @@
-config.local.php
-storage/*
-!storage/.keep
-!storage/.htaccess
-uploads/*
-!uploads/.keep
-!uploads/.htaccess
+node_modules/
+frontend/node_modules/
+www/server/config.local.php
+www/server/storage/*
+!www/server/storage/.keep
+www/server/uploads/*
+!www/server/uploads/.keep

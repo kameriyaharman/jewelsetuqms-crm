@@ -1,0 +1,343 @@
+<?php
+/* ---------- QC requests, request form, job actions, Excel import ---------- */
+
+api('GET', 'requests', [...R_INT, 'client', 'vendor'], function () {
+    [$sc, $sp] = job_scope('j');
+    $st = (string)in_('st', 'ALL'); $src = (string)in_('src'); $cf = (int)in_('client'); $vf = (int)in_('vendor'); $qs = trim((string)in_('q'));
+    $base = "FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id WHERE $sc"; $p = $sp;
+    if (in_array(role(), ['client', 'vendor'], true)) { $base .= " AND (j.status<>'DRAFT' OR j.created_by=?)"; $p[] = user()['id']; }
+    $counts = []; foreach (all("SELECT j.status, COUNT(*) n $base GROUP BY j.status", $p) as $r) $counts[$r['status']] = (int)$r['n'];
+    $w = $base;
+    if ($st !== 'ALL') { $w .= ' AND j.status=?'; $p[] = $st; }
+    if ($src) { $w .= ' AND j.source=?'; $p[] = $src; }
+    if ($cf) { $w .= ' AND j.client_id=?'; $p[] = $cf; }
+    if ($vf) { $w .= ' AND j.vendor_id=?'; $p[] = $vf; }
+    if ($qs) { $w .= ' AND (j.po_no LIKE ? OR j.req_no LIKE ? OR j.job_no LIKE ? OR j.id IN (SELECT job_id FROM qc_items WHERE sku LIKE ?))'; array_push($p, "%$qs%", "%$qs%", "%$qs%", "%$qs%"); }
+    $rows = all("SELECT j.*, c.code client_code, v.name vendor_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus,
+        (SELECT SUM(ready_qty) FROM qc_items i WHERE i.job_id=j.id) qty $w ORDER BY CASE j.status WHEN 'REQUESTED' THEN 0 WHEN 'DRAFT' THEN 1 ELSE 2 END, j.id DESC LIMIT 300", $p);
+    foreach ($rows as &$r) $r['scope_label'] = scope_label($r);
+    return ['rows' => $rows, 'counts' => $counts, 'total' => array_sum($counts)];
+});
+
+api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
+    $job = job_load((int)in_('id'));
+    if (!$job || !can_see_job($job)) fail('Request not found', 404);
+    $job['scope_label'] = scope_label($job);
+    $items = all('SELECT * FROM qc_items WHERE job_id=? ORDER BY id', [$job['id']]);
+    $ids = array_map('intval', array_column($items, 'id'));
+    $log = all('SELECT a.*, u.name uname FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE (a.entity=? AND a.entity_id=?) ' .
+        ($ids ? "OR (a.entity='item' AND a.entity_id IN (" . implode(',', $ids) . '))' : '') . ' ORDER BY a.id DESC LIMIT 40', ['job', $job['id']]);
+    $r = role(); $cv = in_array($r, ['client', 'vendor'], true);
+    $mine = $job['created_by'] == user()['id'];
+    $can = [
+        'edit' => (in_array($job['status'], ['DRAFT', 'REQUESTED'], true) && (is_role('super_admin', 'back_office') || ($cv && $mine))) || (is_role('super_admin', 'back_office') && $job['status'] === 'SCHEDULED'),
+        'schedule' => is_role('super_admin', 'back_office') && in_array($job['status'], ['REQUESTED', 'DRAFT', 'SCHEDULED'], true),
+        'assign' => is_role('super_admin', 'qc_manager', 'back_office') && in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS'], true),
+        'cancel' => (is_role('super_admin', 'back_office') && in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED', 'ASSIGNED'], true)) || ($cv && $mine && in_array($job['status'], ['DRAFT', 'REQUESTED'], true)),
+        'report_actions' => is_internal() && in_array($job['status'], ['EMAILED', 'APPROVED'], true),
+        'finalize' => is_role('super_admin', 'qc_manager') && $job['status'] === 'APPROVED', 'close' => is_internal() && $job['status'] === 'EMAILED',
+        'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => flag('allow_job_split') && count($items) > 1];
+    // hide unpublished results from clients/vendors
+    if ($cv) foreach ($items as &$i) if ($i['status'] !== 'APPROVED') { $i['final_result'] = null; $i['system_result'] = null; }
+    unset($i);
+    return ['job' => $job, 'items' => $items, 'attachments' => all('SELECT * FROM attachments WHERE job_id=? ORDER BY id', [$job['id']]), 'log' => $log,
+        'emails' => $cv ? [] : all('SELECT * FROM email_log WHERE job_id=? ORDER BY id DESC LIMIT 20', [$job['id']]), 'can' => $can];
+});
+
+/* ----- request form ----- */
+function req_allowed(): void {
+    if (role() === 'vendor' && !flag('enable_vendor_qc_request')) fail('Self-service QC requests are not enabled yet. Please contact JEWELSETU.', 403);
+    if (role() === 'client' && !flag('enable_client_qc_request')) fail('Self-service QC requests are not enabled yet. Please contact JEWELSETU.', 403);
+}
+api('GET', 'request/form', ['super_admin', 'back_office', 'client', 'vendor'], function () {
+    req_allowed();
+    $job = null; $items = []; $atts = [];
+    if ($id = (int)in_('id')) {
+        $job = job_load($id);
+        if (!$job || !can_see_job($job) || !in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED'], true) || (in_array(role(), ['client', 'vendor'], true) && !in_array($job['status'], ['DRAFT', 'REQUESTED'], true))) fail('This request can no longer be edited.', 409);
+        $items = all('SELECT * FROM qc_items WHERE job_id=? ORDER BY id', [$id]); $atts = all('SELECT * FROM attachments WHERE job_id=?', [$id]);
+    }
+    return ['job' => $job, 'items' => $items, 'attachments' => $atts, 'next_req_no' => next_req_no()];
+});
+api('POST', 'request/save', ['super_admin', 'back_office', 'client', 'vendor'], function () {
+    req_allowed();
+    $u = user(); $r = $u['role'];
+    $D = jdec((string)in_('data'));     // JSON payload (multipart for files)
+    $job = null;
+    if ($id = (int)($D['id'] ?? 0)) {
+        $job = job_load($id);
+        if (!$job || !can_see_job($job) || !in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED'], true)) fail('This request can no longer be edited.', 409);
+    }
+    $cid = $r === 'client' ? (int)$u['client_id'] : (int)($D['client_id'] ?? 0);
+    $vid = $r === 'vendor' ? (int)$u['vendor_id'] : (int)($D['vendor_id'] ?? 0);
+    $err = [];
+    if (!one('SELECT 1 FROM client_vendor WHERE client_id=? AND vendor_id=?', [$cid, $vid])) $err[] = 'Selected vendor is not mapped to this client.';
+    if (!trim((string)($D['po_no'] ?? ''))) $err[] = 'PO number is required.';
+    $scope = ($D['scope'] ?? '') === 'SAMPLE' ? 'SAMPLE' : 'BULK';
+    $mode = in_array($D['bulk_mode'] ?? '', ['100', 'AQL', 'DEFINED'], true) ? $D['bulk_mode'] : '100';
+    $excess = !empty($D['allow_excess']) ? 1 : 0; $defined = (int)($D['defined_qty'] ?? 0);
+    $rows = [];
+    foreach ((array)($D['items'] ?? []) as $k => $it) {
+        $sku = strtoupper(trim((string)($it['sku'] ?? ''))); if ($sku === '') continue;
+        $oq = (int)($it['order_qty'] ?? 0); $rq = (int)($it['ready_qty'] ?? 0);
+        if ($rq > $oq && !$excess) $err[] = "SKU $sku: Ready qty ($rq) is more than Order qty ($oq). Tick “Allow excess quantity” if intended.";
+        if ($rq <= 0) $err[] = "SKU $sku: Ready qty must be more than 0.";
+        if ($scope === 'BULK' && $mode === 'DEFINED' && $defined > $rq) $err[] = "SKU $sku: Defined sample qty is more than Ready qty.";
+        $row = ['k' => $it['key'] ?? $k, 'id' => (int)($it['id'] ?? 0), 'sku' => $sku, 'order_qty' => $oq, 'ready_qty' => $rq];
+        foreach (['product', 'style_ref', 'metal', 'plating', 'stone_setting', 'target_weight', 'length', 'lock_type', 'stamping'] as $f) $row[$f] = trim((string)($it[$f] ?? ''));
+        $rows[] = $row;
+    }
+    if (!$rows) $err[] = 'Add at least one SKU / design.';
+    $skus = array_column($rows, 'sku'); if (count($skus) !== count(array_unique($skus))) $err[] = 'Duplicate SKU in this request.';
+    if ($err) json_out(['error' => implode("\n", $err), 'errors' => $err], 422);
+    $submit = ($D['action'] ?? '') === 'submit';
+    $data = ['client_id' => $cid, 'vendor_id' => $vid, 'po_no' => trim((string)$D['po_no']), 'qc_type' => $D['qc_type'] ?? 'Pre-shipment', 'location' => $D['location'] ?? '',
+        'requested_date' => ($D['requested_date'] ?? '') ?: null, 'scope' => $scope, 'bulk_mode' => $mode, 'insp_level' => $D['insp_level'] ?? 'II',
+        'aql_critical' => (float)($D['aql_critical'] ?? 0), 'aql_major' => (float)($D['aql_major'] ?? 2.5), 'aql_minor' => (float)($D['aql_minor'] ?? 4.0),
+        'defined_qty' => $defined, 'allow_excess' => $excess, 'specs' => $D['specs'] ?? '', 'special_req' => $D['special_req'] ?? ''];
+    if ($job) { if ($job['status'] === 'DRAFT' && $submit) $data['status'] = 'REQUESTED'; update('qc_jobs', $data, 'id=?', [$job['id']]); $jid = (int)$job['id']; audit('job', $jid, 'UPDATE'); }
+    else {
+        $data += ['req_no' => next_req_no(), 'source' => match ($r) { 'vendor' => 'Vendor portal', 'client' => 'Client portal', default => 'Back Office' },
+            'status' => $submit ? 'REQUESTED' : 'DRAFT', 'created_by' => $u['id'], 'created_at' => now()];
+        $jid = insert('qc_jobs', $data); audit('job', $jid, 'CREATE', 'status', null, $data['status']);
+    }
+    $jobRow = one('SELECT * FROM qc_jobs WHERE id=?', [$jid]); $keep = [];
+    foreach ($rows as $row) {
+        $plan = item_plan($jobRow, $row['ready_qty']);
+        $d = array_diff_key($row, ['k' => 1, 'id' => 1]) + ['insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'updated_at' => now()];
+        if ($row['id'] && one('SELECT id FROM qc_items WHERE id=? AND job_id=?', [$row['id'], $jid])) { update('qc_items', $d, 'id=?', [$row['id']]); $iid = $row['id']; }
+        else $iid = insert('qc_items', $d + ['job_id' => $jid, 'status' => 'PENDING', 'master_sample' => 'Approved Master Sample Available']);
+        $keep[] = $iid;
+        $fk = 'row_file_' . preg_replace('/[^A-Za-z0-9_]/', '', (string)$row['k']);
+        if (!empty($_FILES[$fk]) && ($s = save_upload($_FILES[$fk], 'specs'))) insert('attachments', ['job_id' => $jid, 'item_id' => $iid, 'path' => $s['path'], 'name' => $s['name'], 'created_at' => now()]);
+    }
+    q('DELETE FROM qc_items WHERE job_id=? AND id NOT IN (' . implode(',', array_map('intval', $keep)) . ')', [$jid]);
+    foreach (files_array('files') as $f) if ($s = save_upload($f, 'specs')) insert('attachments', ['job_id' => $jid, 'item_id' => null, 'path' => $s['path'], 'name' => $s['name'], 'created_at' => now()]);
+    $J = job_load($jid);
+    if ($submit) {
+        notify_role('back_office', "New QC request {$J['req_no']} · {$J['client_code']} – {$J['vendor_name']} · PO {$J['po_no']}", 'request/' . $jid);
+        notify_role('super_admin', "New QC request {$J['req_no']} from {$J['source']}", 'request/' . $jid);
+        if ($r !== 'client') notify_role('client', "{$J['vendor_name']} QC request {$J['req_no']} · PO {$J['po_no']}", 'request/' . $jid, ['client_id' => $cid]);
+        if ($r !== 'vendor') notify_role('vendor', "QC request {$J['req_no']} raised for PO {$J['po_no']}", 'request/' . $jid, ['vendor_id' => $vid]);
+        return ['ok' => true, 'id' => $jid, 'message' => "QC request {$J['req_no']} submitted — status REQUESTED."];
+    }
+    return ['ok' => true, 'id' => $jid, 'message' => "Draft {$J['req_no']} saved."];
+});
+
+/* ----- job workflow actions ----- */
+api('POST', 'job/action', R_ALL, function () {
+    require_once ROOT . '/app/workflow.php';
+    $act = (string)in_('act');
+    if (in_array($act, ['hold_respond', 'concession'], true)) {
+        $it = one('SELECT * FROM qc_items WHERE id=?', [(int)in_('item_id')]);
+        $job = $it ? job_load((int)$it['job_id']) : null;
+        if (!$job || !can_see_job($job)) fail('Forbidden', 403);
+        $decision = in_('decision') === 'APPROVE' ? 'APPROVED' : 'REJECTED'; $remark = trim((string)in_('remark'));
+        $who = user()['name'] . ' · ' . (role() === 'client' ? $job['client_name'] : (role() === 'vendor' ? $job['vendor_name'] : 'JEWELSETU'));
+        if ($act === 'hold_respond') {
+            if ($it['hold_status'] !== 'PENDING' || (role() === 'client' && $it['hold_for'] !== 'client') || (role() === 'vendor' && $it['hold_for'] !== 'vendor') || !in_array(role(), ['client', 'vendor', 'super_admin'], true)) fail('This hold is not waiting for you.');
+            update('qc_items', ['hold_status' => $decision, 'hold_response' => $remark, 'hold_resp_at' => now(), 'status' => 'IN_PROGRESS', 'hold_by' => $it['hold_by'] . ' | answered by ' . $who], 'id=?', [$it['id']]);
+            audit('item', (int)$it['id'], 'HOLD_' . $decision, 'hold', 'PENDING', $decision . ($remark ? ": $remark" : ''));
+            notify((int)$job['inspector_id'], "Hold on {$it['sku']} " . strtolower($decision) . ' by ' . ucfirst(role()) . ($remark ? " — $remark" : '') . ' · resume inspection', 'app/inspect/' . $it['id']);
+            notify_role('qc_manager', "SKU hold answered: {$it['sku']} ($decision)", 'request/' . $job['id']);
+            return ['ok' => true, 'message' => 'Your decision was sent to the inspector — inspection can resume.'];
+        }
+        if (role() !== 'client' && !is_role('super_admin')) fail('Forbidden', 403);
+        if ($it['concession_status'] !== 'PENDING') fail('Already decided.');
+        update('qc_items', ['concession_status' => $decision, 'concession_remark' => $remark, 'concession_by' => $who, 'concession_at' => now()], 'id=?', [$it['id']]);
+        audit('item', (int)$it['id'], 'CONCESSION_' . $decision, 'Client decision', 'PENDING', $decision);
+        item_pdf((int)$it['id'], true); if ($job['po_pdf']) job_pdf((int)$job['id'], true);
+        notify_role('qc_manager', "Client {$decision} deviation · {$it['report_no']}", 'report/' . $it['id']);
+        notify_role('vendor', "Client {$decision} deviation on {$it['report_no']}" . ($decision === 'REJECTED' ? ' — rework required' : ''), 'reports', ['vendor_id' => $job['vendor_id']]);
+        return ['ok' => true, 'message' => 'Decision recorded and printed on the report.'];
+    }
+    $id = (int)in_('id'); $job = job_load($id);
+    if (!$job || !can_see_job($job)) fail('Not found', 404);
+    switch ($act) {
+        case 'schedule':
+            if (!is_role('super_admin', 'back_office')) break;
+            if (!in_('date')) fail('Choose the confirmed QC date.');
+            $d = ['scheduled_date' => in_('date'), 'time_slot' => in_('time') ? date('h:i A', strtotime((string)in_('time'))) : null, 'priority' => in_('priority', 'Normal'),
+                'manager_id' => (int)in_('manager_id') ?: null, 'location' => in_('location', $job['location']), 'scheduled_at' => now()];
+            if (!$job['job_no']) $d['job_no'] = next_job_no();
+            if (in_array($job['status'], ['REQUESTED', 'DRAFT'], true)) $d['status'] = 'SCHEDULED';
+            update('qc_jobs', $d, 'id=?', [$id]); audit('job', $id, 'SCHEDULED', 'scheduled_date', $job['scheduled_date'], $d['scheduled_date']);
+            notify_job_parties($job, "QC scheduled · PO {$job['po_no']} on " . fdate($d['scheduled_date']) . ' ' . $d['time_slot'], 'request/' . $id);
+            if ($d['manager_id']) notify($d['manager_id'], "New QC job to assign · {$job['client_code']} – {$job['vendor_name']}", 'jobs');
+            return ['ok' => true, 'message' => 'Scheduled — job ' . ($d['job_no'] ?? $job['job_no']) . ' created; vendor & client notified.'];
+        case 'assign':
+            if (!is_role('super_admin', 'qc_manager', 'back_office')) break;
+            if (!in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS'], true)) fail('Job cannot be (re)assigned in status ' . $job['status']);
+            $ins = (int)in_('inspector_id');
+            if ($ins && !one("SELECT id FROM users WHERE id=? AND role='inspector'", [$ins])) fail('Invalid inspector');
+            $d = ['inspector_id' => $ins ?: null, 'inspector2_id' => (int)in_('inspector2_id') ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: user()['id']];
+            if (in_('date')) $d['scheduled_date'] = in_('date');
+            if (!$job['job_no']) $d['job_no'] = next_job_no();
+            if (!$job['scheduled_date'] && !in_('date')) $d['scheduled_date'] = $job['requested_date'] ?: today();
+            if ($ins && in_array($job['status'], ['REQUESTED', 'SCHEDULED'], true)) $d['status'] = 'ASSIGNED';
+            if (!$ins && $job['status'] === 'ASSIGNED') $d['status'] = 'SCHEDULED';
+            update('qc_jobs', $d, 'id=?', [$id]);
+            audit('job', $id, 'ASSIGNED', 'inspector', $job['inspector_code'], $ins ? val('SELECT emp_code FROM users WHERE id=?', [$ins]) : null);
+            if ($ins) {
+                $when = fdate($d['scheduled_date'] ?? $job['scheduled_date']);
+                notify($ins, "New QC assigned · {$job['client_code']} – {$job['vendor_name']} · $when", 'app/job/' . $id);
+                if (!empty($d['inspector2_id'])) notify($d['inspector2_id'], "New QC assigned (split) · {$job['client_code']} – {$job['vendor_name']} · $when", 'app/job/' . $id);
+                $ip = one('SELECT name, emp_code FROM users WHERE id=?', [$ins]);
+                if (in_('notify_vendor')) notify_role('vendor', "Inspector {$ip['emp_code']} · {$ip['name']} assigned for PO {$job['po_no']} on $when — please arrange gate entry", 'schedule', ['vendor_id' => $job['vendor_id']]);
+            }
+            return ['ok' => true, 'message' => $ins ? 'Inspector assigned — notifications sent.' : 'Inspector removed.'];
+        case 'cancel':
+            $cv = in_array(role(), ['vendor', 'client'], true) && in_array($job['status'], ['DRAFT', 'REQUESTED'], true) && $job['created_by'] == user()['id'];
+            if (!is_role('super_admin', 'back_office') && !$cv) break;
+            if (!in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED', 'ASSIGNED'], true)) fail('Only jobs not yet started can be cancelled.');
+            q("UPDATE qc_jobs SET status='CANCELLED' WHERE id=?", [$id]); audit('job', $id, 'STATUS', 'status', $job['status'], 'CANCELLED');
+            if ($job['inspector_id']) notify((int)$job['inspector_id'], "QC job cancelled · {$job['job_no']}", 'app');
+            return ['ok' => true, 'message' => 'Request cancelled.'];
+        case 'close':
+            if (!is_internal()) break;
+            if ($job['status'] !== 'EMAILED') fail('Only reported jobs can be closed.');
+            q("UPDATE qc_jobs SET status='CLOSED', closed_at=? WHERE id=?", [now(), $id]); audit('job', $id, 'STATUS', 'status', 'EMAILED', 'CLOSED');
+            return ['ok' => true, 'message' => 'Job closed.'];
+        case 'finalize':
+            if (!is_role('super_admin', 'qc_manager')) break;
+            refresh_job_status($id); finalize_job_if_ready($id);
+            return ['ok' => true, 'message' => 'PO report generated and emailed.'];
+        case 'email_job':
+            if (!is_internal()) break;
+            [, , $file] = job_pdf($id, true);
+            $r = email_report($job, null, $file, (string)in_('subject', "QC Inspection Report | {$job['client_code']} | PO {$job['po_no']}"), (string)in_('message', 'Please find attached the QC inspection report.'));
+            return ['ok' => true, 'message' => 'PO report emailed: ' . implode(', ', array_map(fn($k, $v) => "$k $v", array_keys($r), $r))];
+        case 'email_item':
+            if (!is_internal()) break;
+            $it = one('SELECT * FROM qc_items WHERE id=? AND job_id=?', [(int)in_('item_id'), $id]);
+            if (!$it || !$it['locked']) fail('Report not approved yet.');
+            $file = $it['pdf_path'] && is_file(UPLOAD_DIR . '/' . $it['pdf_path']) ? UPLOAD_DIR . '/' . $it['pdf_path'] : item_pdf((int)$it['id'], true)[2];
+            $r = email_report($job, $it, $file, (string)in_('subject'), (string)in_('message'));
+            return ['ok' => true, 'message' => 'Report sent: ' . implode(', ', array_map(fn($k, $v) => "$k $v", array_keys($r), $r))];
+    }
+    fail('Not allowed', 403);
+});
+
+/* ----- Excel import ----- */
+function parse_scope(string $s): ?array {
+    $s = strtoupper(trim($s));
+    if ($s === '') return null;
+    if (str_contains($s, 'SAMPLE')) return ['scope' => 'SAMPLE', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Sample'];
+    if (preg_match('/AQL[^0-9]*([0-9.]+)/', $s, $m)) return ['scope' => 'BULK', 'bulk_mode' => 'AQL', 'aql_major' => (float)$m[1], 'defined_qty' => 0, 'label' => 'AQL-' . $m[1]];
+    if (str_contains($s, 'AQL')) return ['scope' => 'BULK', 'bulk_mode' => 'AQL', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'AQL-2.5'];
+    if (preg_match('/DEFINED[^0-9]*([0-9]+)/', $s, $m)) return ['scope' => 'BULK', 'bulk_mode' => 'DEFINED', 'aql_major' => 2.5, 'defined_qty' => (int)$m[1], 'label' => 'Defined ' . $m[1]];
+    if (str_contains($s, '100') || str_contains($s, 'BULK')) return ['scope' => 'BULK', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Bulk 100%'];
+    return null;
+}
+function import_allowed(): bool {
+    $isV = role() === 'vendor';
+    if ($isV && !flag('enable_vendor_qc_request')) fail('Bulk Excel requests are not enabled yet.', 403);
+    return $isV;
+}
+api('GET', 'import', ['super_admin', 'back_office', 'vendor'], function () {
+    $isV = import_allowed();
+    $clients = $isV ? all("SELECT c.id, c.code, c.name FROM clients c JOIN client_vendor m ON m.client_id=c.id WHERE m.vendor_id=? AND c.status='ACTIVE' ORDER BY c.code", [user()['vendor_id']])
+        : all("SELECT id, code, name FROM clients WHERE status='ACTIVE' ORDER BY code");
+    require_once ROOT . '/app/xlsx.php';
+    return ['clients' => $clients, 'import' => $_SESSION['import'] ?? null, 'columns' => IMPORT_COLS, 'vendor_mode' => $isV];
+});
+api('POST', 'import/reset', ['super_admin', 'back_office', 'vendor'], function () { unset($_SESSION['import']); return ['ok' => true]; });
+api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function () {
+    require_once ROOT . '/app/xlsx.php';
+    $isV = import_allowed();
+    $cid = (int)in_('client_id'); $client = one('SELECT * FROM clients WHERE id=?', [$cid]);
+    if ($isV && !one('SELECT 1 FROM client_vendor WHERE client_id=? AND vendor_id=?', [$cid, user()['vendor_id']])) fail('Client not mapped to you.');
+    $f = $_FILES['file'] ?? null;
+    if (!$client || !$f || $f['error'] !== UPLOAD_ERR_OK) fail('Select a client and an Excel file.');
+    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    try { $raw = $ext === 'csv' ? csv_read($f['tmp_name']) : xlsx_read($f['tmp_name']); } catch (Throwable $e) { fail('Could not read file: ' . $e->getMessage() . ' (use .xlsx or .csv)'); }
+    if (count($raw) < 2) fail('The file has no data rows.');
+    $hdr = array_map(fn($x) => strtolower(preg_replace('/[^a-z]/i', '', (string)$x)), $raw[0]);
+    $find = function (array $names) use ($hdr) { foreach ($names as $n) { $k = array_search($n, $hdr, true); if ($k !== false) return $k; } return null; };
+    $map = [];
+    foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design'],
+        'style' => ['clientstyleref', 'styleref', 'clientstyle', 'refno'], 'stone' => ['stonesetting', 'stone', 'settingtype'],
+        'product' => ['product', 'category'], 'order' => ['orderqty', 'orderquantity', 'order'], 'ready' => ['readyqty', 'readyquantity', 'ready'],
+        'scope' => ['qcscope', 'scope'], 'metal' => ['metal'], 'plating' => ['plating'], 'weight' => ['weight', 'targetweight'], 'length' => ['length'],
+        'lock' => ['lock', 'locktype'], 'stamping' => ['stamping'], 'date' => ['requesteddate', 'qcdate', 'date'], 'spec' => ['specfile', 'spec', 'attachment']] as $k => $names) $map[$k] = $find($names);
+    foreach (($isV ? ['po', 'sku', 'ready'] : ['vendor', 'po', 'sku', 'ready']) as $req) if ($map[$req] === null) fail("Column “$req” not found. Download the template to see the expected columns.");
+    $vendors = []; foreach (all('SELECT * FROM vendors') as $v) { $vendors[strtolower($v['name'])] = $v; $vendors[strtolower($v['code'])] = $v; }
+    $mapped = array_column(all('SELECT vendor_id FROM client_vendor WHERE client_id=?', [$cid]), 'vendor_id');
+    $existing = []; foreach (all("SELECT j.po_no, i.sku FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE j.client_id=? AND j.status NOT IN ('CANCELLED')", [$cid]) as $e) $existing[strtoupper($e['po_no'] . '|' . $e['sku'])] = true;
+    $seen = []; $rows = [];
+    foreach (array_slice($raw, 1) as $n => $r) {
+        $g = fn($k) => $map[$k] === null ? '' : trim((string)($r[$map[$k]] ?? ''));
+        if (!array_filter($r, fn($x) => trim((string)$x) !== '')) continue;
+        $e = []; $w = [];
+        $v = $isV ? one('SELECT * FROM vendors WHERE id=?', [user()['vendor_id']]) : ($vendors[strtolower($g('vendor'))] ?? null);
+        if (!$v && !$isV) foreach ($vendors as $key => $vv) if ($g('vendor') !== '' && str_starts_with($key, strtolower($g('vendor')))) { $v = $vv; break; }
+        if (!$v) $e[] = 'Unknown vendor'; elseif (!in_array($v['id'], $mapped)) $e[] = 'Vendor not mapped to client';
+        $po = $g('po'); $sku = strtoupper($g('sku'));
+        if ($po === '') $e[] = 'PO missing'; if ($sku === '') $e[] = 'SKU missing';
+        $oq = (int)preg_replace('/[^0-9]/', '', $g('order')); $rq = (int)preg_replace('/[^0-9]/', '', $g('ready'));
+        if ($rq <= 0) $e[] = 'Ready qty missing'; if ($oq && $rq > $oq) $e[] = 'Ready > Order';
+        $sc = parse_scope($g('scope')) ?? ['scope' => 'BULK', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Bulk 100%'];
+        if ($g('scope') === '') $w[] = 'Scope blank → Bulk 100%';
+        if ($sc['bulk_mode'] === 'DEFINED' && $sc['defined_qty'] > $rq) $e[] = 'Defined qty > Ready';
+        $key = strtoupper($po . '|' . $sku);
+        if (isset($seen[$key]) || isset($existing[$key])) $e[] = 'Duplicate SKU'; $seen[$key] = true;
+        if ($g('spec') === '') $w[] = 'Spec file missing';
+        $rows[] = ['n' => $n + 2, 'vendor_id' => $v['id'] ?? null, 'vendor' => $v['name'] ?? $g('vendor'), 'po' => $po, 'sku' => $sku, 'product' => $g('product') ?: 'Necklace',
+            'order' => $oq ?: $rq, 'ready' => $rq, 'scope' => $sc, 'metal' => $g('metal'), 'plating' => $g('plating'), 'weight' => $g('weight'), 'length' => $g('length'),
+            'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => $g('stone'), 'date' => excel_date($g('date')), 'spec' => $g('spec'), 'errors' => $e, 'warnings' => $w,
+            'raw' => array_map(fn($c) => $map[$c] === null ? '' : ($r[$map[$c]] ?? ''), ['vendor', 'po', 'sku', 'style', 'stone', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
+    }
+    $saved = save_upload($f, 'imports', ['xlsx', 'csv', 'xls']);
+    $_SESSION['import'] = ['client_id' => $cid, 'client' => $client['code'], 'file' => $f['name'], 'size' => $f['size'], 'rows' => $rows, 'path' => $saved['path'] ?? null];
+    return ['ok' => true, 'import' => $_SESSION['import']];
+});
+api('POST', 'import/create', ['super_admin', 'back_office', 'vendor'], function () {
+    $isV = import_allowed(); $imp = $_SESSION['import'] ?? null;
+    if (!$imp) fail('Upload a file first.');
+    $status = in_('mode') === 'draft' ? 'DRAFT' : 'REQUESTED';
+    $groups = []; foreach ($imp['rows'] as $r) { if ($r['errors']) continue; $groups[$r['vendor_id'] . '|' . $r['po'] . '|' . $r['scope']['label']][] = $r; }
+    $made = [];
+    foreach ($groups as $g) {
+        $f = $g[0]; $sc = $f['scope'];
+        $job = ['req_no' => next_req_no(), 'source' => $isV ? 'Vendor portal' : 'Excel import', 'client_id' => $imp['client_id'], 'vendor_id' => $f['vendor_id'], 'po_no' => $f['po'],
+            'qc_type' => $sc['scope'] === 'SAMPLE' ? 'Pre-production' : 'Pre-shipment', 'location' => explode(',', (string)val('SELECT location FROM vendors WHERE id=?', [$f['vendor_id']]))[0],
+            'requested_date' => $f['date'] ?: date('Y-m-d', strtotime('+2 days')), 'scope' => $sc['scope'], 'bulk_mode' => $sc['bulk_mode'], 'insp_level' => 'II',
+            'aql_critical' => 0, 'aql_major' => $sc['aql_major'], 'aql_minor' => 4.0, 'defined_qty' => $sc['defined_qty'], 'allow_excess' => 0,
+            'specs' => 'Imported from ' . $imp['file'], 'status' => $status, 'created_by' => user()['id'], 'created_at' => now()];
+        $jid = insert('qc_jobs', $job); $job['id'] = $jid;
+        foreach ($g as $r) {
+            $plan = item_plan($job, $r['ready']);
+            insert('qc_items', ['job_id' => $jid, 'sku' => $r['sku'], 'product' => $r['product'], 'metal' => $r['metal'], 'plating' => $r['plating'], 'target_weight' => $r['weight'],
+                'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'style_ref' => $r['style'], 'stone_setting' => $r['stone'], 'master_sample' => 'Approved Master Sample Available',
+                'order_qty' => $r['order'], 'ready_qty' => $r['ready'], 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'status' => 'PENDING', 'updated_at' => now()]);
+        }
+        if ($imp['path']) insert('attachments', ['job_id' => $jid, 'item_id' => null, 'path' => $imp['path'], 'name' => $imp['file'], 'created_at' => now()]);
+        audit('job', $jid, 'CREATE', 'source', null, 'Excel import');
+        if ($status === 'REQUESTED') { notify_job_parties(job_load($jid), "QC request {$job['req_no']} created from Excel · PO {$job['po_no']}", 'request/' . $jid);
+            if ($isV) notify_role('back_office', "Vendor bulk request {$job['req_no']} · PO {$job['po_no']}", 'request/' . $jid); }
+        $made[] = $job['req_no'];
+    }
+    unset($_SESSION['import']);
+    return ['ok' => true, 'created' => $made, 'message' => count($made) . ' QC request(s) created (' . implode(', ', $made) . ') — status ' . $status . '.'];
+});
+api('GET', 'import/template', ['super_admin', 'back_office', 'vendor'], function () {
+    require_once ROOT . '/app/xlsx.php';
+    if (in_('errors') && !empty($_SESSION['import'])) {
+        $rows = [array_merge(['Row'], IMPORT_COLS, ['Issues'])];
+        foreach ($_SESSION['import']['rows'] as $r) if ($r['errors'] || $r['warnings']) $rows[] = array_merge([$r['n']], $r['raw'], [implode('; ', array_merge($r['errors'], $r['warnings']))]);
+        $name = 'import_errors_' . date('Ymd_His') . '.xlsx';
+    } else {
+        $v = role() === 'vendor' ? val('SELECT name FROM vendors WHERE id=?', [user()['vendor_id']]) : 'Ashok Jewels';
+        $d = fn($n) => date('d-m-Y', strtotime("+$n days"));
+        $rows = [IMPORT_COLS,
+            [$v, '81966', 'KNK01268FS0033', 'KP-FS0033', 'CZ / Prong', 'Necklace', 1150, 1150, 'Bulk 100%', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS', $d(3), 'Spec.pdf'],
+            [$v, '81966', 'RNG00451', 'KP-RG451', 'CZ / Prong', 'Ring', 500, 500, 'Bulk 100%', '925 Silver', 'White rhodium', '2.40 g', 'Size 6', '', '925', $d(3), 'CAD.jpg'],
+            ['Nirvana', '82001', 'ABC001', 'KP-ABC1', 'MOP / Bezel', 'Pendant', 700, 700, 'AQL-1.5', '925 Silver', 'White rhodium', '1.20 g', '20 mm', '', '925', $d(4), ''],
+            ['Nirvana', '82002', 'ABC002', 'KP-ABC2', '—', 'Chain', 10, 10, 'Sample', '925 Silver', '', '4.00 g', '20 inch', 'Lobster lock', '925', $d(4), ''],
+            [$v, '81968', 'KNK00511BR0007', 'KP-BR0007', 'Marquise CZ / Prong', 'Bracelet', 300, 300, 'Defined 50', '925 Silver', 'Rose gold', '6.20 g', '7 inch', 'Box clasp', '925 + ARCL', $d(5), '']];
+        $name = 'QTRACK_QC_REQUIREMENT_TEMPLATE.xlsx';
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $name . '"');
+    echo xlsx_write($rows, 'QC Requirement'); exit;
+});

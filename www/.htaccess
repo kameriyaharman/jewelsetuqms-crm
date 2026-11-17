@@ -1,0 +1,30 @@
+# JEWELSETU Q-TRACK — Apache config for Linux shared hosting (cPanel / Hostinger)
+Options -Indexes
+DirectoryIndex index.html
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # If installed in a sub-folder, set e.g.:  RewriteBase /qtrack/   (and build with VITE_BASE=/qtrack/)
+  # PHP code, uploads and database config are never served directly
+  RewriteRule ^server(/|$) - [F,L]
+  # JSON API
+  RewriteRule ^api/index\.php$ - [L]
+  RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
+  # React single-page app: everything else that is not a real file -> index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [L]
+</IfModule>
+<IfModule mod_php.c>
+  php_value upload_max_filesize 32M
+  php_value post_max_size 40M
+  php_value memory_limit 256M
+  php_value max_execution_time 120
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|png|jpg|svg|woff2)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "^(index\.html|sw\.js|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
