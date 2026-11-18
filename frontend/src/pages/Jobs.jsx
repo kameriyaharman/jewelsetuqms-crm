@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdate } from '../app/util';
 
 const TABS = [['ALL', 'All'], ['UNASSIGNED', 'Unassigned'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['REVIEW', 'Review'], ['CLOSED', 'Reported / closed']];
@@ -13,16 +13,25 @@ export default function Jobs() {
   const { me, refresh } = useAuth(); const canAssign = ['super_admin', 'qc_manager'].includes(me.user.role);
   const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'ALL';
   const q = useApi('jobs', { f });
+  const [view, setViewS] = useState(() => { try { return localStorage.getItem('qt_jobs_view') || 'list'; } catch { return 'list'; } });
+  const setView = (v) => { setViewS(v); try { localStorage.setItem('qt_jobs_view', v); } catch { /* ignore */ } };
   let sel = Number(sp.get('id')) || null;
   if (!sel && q.data) { const u = q.data.rows.find((r) => !r.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(r.status)); sel = u?.id || null; }
   const selRow = q.data?.rows.find((r) => r.id === sel);
   return <Page title="QC Jobs" sub="All jobs by status; assign or reassign an inspector with availability and notifications" actions={<Link className="btn" to="/schedule"><Icon n="cal" /> Week schedule</Link>}>
     <Loader q={q}>{(d) => <div className={'grid ' + (canAssign && selRow && OPEN.includes(selRow.status) ? 'g-82' : '')}>
       <div className="card">
-        <div className="tabs">{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l} <b>{d.counts[k] || 0}</b></a>)}</div>
-        {!d.rows.length ? <Empty>No jobs.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKUs</th><th>QC date</th><th>Inspector</th><th>Status</th></tr></thead><tbody>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}><div className="tabs" style={{ flex: 1 }}>{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l} <b>{d.counts[k] || 0}</b></a>)}</div>
+          <span className="viewtog"><button className={view === 'list' ? 'on' : ''} title="List view" onClick={() => setView('list')}><Icon n="rows" /></button><button className={view === 'cards' ? 'on' : ''} title="Card view" onClick={() => setView('cards')}><Icon n="cards" /></button></span></div>
+        {!d.rows.length ? <Empty>No jobs.</Empty> : view === 'cards' ? <div className="cards">{d.rows.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
+            <Link to={'/request/' + j.id} className="pimg"><Thumb src={j.img} size={150} alt={j.job_no} /></Link>
+            <div className="pbody"><Link className="strong mono" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><b>{j.vendor_name}</b><small className="muted">{j.client_code} · PO {j.po_no} · {j.skus} SKU</small>
+              <small>{fdate(j.scheduled_date, 'd M Y')} {j.time_slot}</small><small>{j.insp_code ? `${j.insp_code} · ${j.insp_name}` : 'Not assigned'}</small></div>
+            <div className="pfoot">{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
+              {canAssign && OPEN.includes(j.status) && <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button>}</div></div>)}</div>
+          : <div className="tbl-wrap"><table className="t"><thead><tr><th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKUs</th><th>QC date</th><th>Inspector</th><th>Status</th></tr></thead><tbody>
           {d.rows.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
-            <td><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono">{j.po_no}</td><td>{j.skus}</td>
+            <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.job_no} /><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></div></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono">{j.po_no}</td><td>{j.skus}</td>
             <td>{fdate(j.scheduled_date, 'd M')} <small>{j.time_slot}</small></td><td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : '—'}</td>
             <td>{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
               {canAssign && OPEN.includes(j.status) && <> <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}</td></tr>)}

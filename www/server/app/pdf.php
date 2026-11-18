@@ -171,6 +171,8 @@ function item_pdf(int $itemId, bool $save = false): array {
  <tr><td class="lab">QC Inspector Name / ID</td><td class="val"><?= h($job['inspector_code'] . ' · ' . $job['inspector_name']) ?></td><td class="lab">Pass / Fail Rule</td><td class="val" style="color:#1f2937"><?= h(result_rule_text($job)) ?></td></tr>
  <tr><td class="lab">Production Batch / Lot No.</td><td class="val"><?= h($it['lot_no'] ?: '—') ?></td><td class="lab">XRF Machine Used</td><td class="val"><?= h($it['xrf_machine'] ?: '—') ?></td></tr>
  <tr><td class="lab">QC Job No.</td><td class="val"><?= h($job['job_no']) ?></td><td class="lab">GPS / Start Time</td><td class="val" style="font-weight:normal"><?= h($it['gps'] ?: '—') ?></td></tr>
+<?php if (trim((string)($it['spec_detail'] ?? '')) !== ''): ?> <tr><td class="lab">Stone / Spec Detail</td><td class="val" colspan="3" style="font-weight:normal"><?= nl2br(h($it['spec_detail'])) ?></td></tr><?php endif; ?>
+<?php if (trim((string)($it['instructions'] ?? '')) !== ''): ?> <tr><td class="lab">Client Instructions</td><td class="val" colspan="3" style="font-weight:normal"><?= nl2br(h($it['instructions'])) ?></td></tr><?php endif; ?>
 </table></div>
 
 <div class="sec"><?= bar($aql ? '2. INSPECTION RESULT SUMMARY (AQL ISO 2859-1 LOGIC)' : "2. INSPECTION RESULT SUMMARY ({$thrT}% REJECTION / REPAIR THRESHOLD LOGIC)") ?>

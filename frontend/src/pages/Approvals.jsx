@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl, post } from '../app/api';
-import { Badge, Empty, Loader, useAction, useApi } from '../app/ui';
+import { Badge, Empty, Loader, useAction, useApi, Thumb } from '../app/ui';
 import { fdate, fdt, num } from '../app/util';
 
 export default function Approvals() {
@@ -16,7 +16,7 @@ export default function Approvals() {
         <div className="card"><div className="card-h"><h2>⏸ SKU hold for approval ({d.holds.length})</h2></div>
           {!d.holds.length && <Empty>No SKU is waiting for {['client', 'vendor'].includes(r) ? 'your' : 'a'} decision.</Empty>}
           {d.holds.map((h) => <div key={h.id} className="note rose" style={{ marginBottom: 12, color: 'var(--tx)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><b className="mono">{h.sku} · {h.product}</b><span><Badge s="HOLD" /> <small>for {h.hold_for}</small></span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><span className="skucell"><Thumb src={h.img} size={48} alt={h.sku} /><b className="mono">{h.sku} · {h.product}</b></span><span><Badge s="HOLD" /> <small>for {h.hold_for}</small></span></div>
             <p className="muted" style={{ margin: '6px 0', fontSize: 12.5 }}>{r === 'vendor' ? h.client_code : h.vendor_name} · PO {h.po_no} · {h.job_no} · held by {h.hold_by} · {fdt(h.hold_at)}</p>
             <p style={{ margin: '6px 0 10px', fontSize: 14 }}>“{h.hold_reason}”</p>
             {!!h.photos.length && <div className="photos" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 10 }}>{h.photos.map((u) => <figure key={u}><a target="_blank" rel="noreferrer" href={u}><img src={u} style={{ height: 70 }} alt="" /></a></figure>)}</div>}
@@ -30,7 +30,7 @@ export default function Approvals() {
         {!!d.concessions.length && <div className="card"><div className="card-h"><h2>Concession approval needed ({d.concessions.length})</h2></div>
           {d.concessions.map((c) => <div key={c.id} className="card" style={{ margin: '0 0 12px', boxShadow: 'none' }}>
             <div className="card-h"><h2>Deviation request — <span className="mono">{c.report_no}</span></h2><Badge s="CONDITIONAL" /></div>
-            <div className="kv mb"><div><small>Vendor</small><b>{c.vendor_name}</b></div><div><small>PO / SKU</small><b>{c.po_no} · {c.sku}</b></div><div><small>Inspected</small><b>{num(c.inspected_qty)} pcs</b></div>
+            <div className="kv mb"><div><small>Vendor</small><b>{c.vendor_name}</b></div><div className="skucell"><Thumb src={c.img} size={40} alt={c.sku} /><span><small>PO / SKU</small><b>{c.po_no} · {c.sku}</b></span></div><div><small>Inspected</small><b>{num(c.inspected_qty)} pcs</b></div>
               <div><small>Raised by</small><b>{c.mgr || 'QC Manager'}</b></div><div><small>Raised on</small><b>{fdate(c.approved_at)}</b></div><div><small>Reply needed by</small><b>{fdate(c.concession_due)}</b></div></div>
             {!!c.deviation.length && <><label>What is outside specification</label><table className="t mb"><thead><tr><th>Parameter</th><th>Spec</th><th>Actual</th><th>Deviation</th><th className="num">Pcs</th></tr></thead><tbody>
               {c.deviation.map((x, k) => <tr key={k}><td>{x.param}</td><td>{x.spec}</td><td>{x.actual}</td><td className="bad-t">{x.dev}</td><td className="num">{x.pcs}</td></tr>)}</tbody></table></>}

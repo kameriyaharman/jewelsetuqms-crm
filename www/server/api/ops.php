@@ -9,7 +9,7 @@ api('GET', 'jobs', R_INT, function () {
     foreach ($groups as $k => $g) $counts[$k] = (int)val("SELECT COUNT(*) $base AND j.status IN ('" . implode("','", $g) . "')");
     $w = $base;
     if ($f === 'UNASSIGNED') $w .= ' AND j.inspector_id IS NULL'; elseif (isset($groups[$f])) $w .= " AND j.status IN ('" . implode("','", $groups[$f]) . "')";
-    $rows = all("SELECT j.*, c.code client_code, v.name vendor_name, u.emp_code insp_code, u.name insp_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus $w ORDER BY j.scheduled_date DESC, j.id DESC LIMIT 300");
+    $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, u.emp_code insp_code, u.name insp_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus $w ORDER BY j.scheduled_date DESC, j.id DESC LIMIT 300");
     return ['rows' => $rows, 'counts' => $counts];
 });
 api('GET', 'jobs/assign', R_INT, function () {
@@ -39,13 +39,13 @@ api('GET', 'schedule', [...R_INT, 'vendor', 'client'], function () {
 
 /* ----- review ----- */
 api('GET', 'review', ['super_admin', 'qc_manager'], function () {
-    return ['rows' => all("SELECT i.id, i.sku, i.status, i.system_result, i.inspected_qty, i.rejected_qty, i.submitted_at, i.return_count, j.job_no, j.po_no, j.id jid, c.code client_code, v.name vendor_name, u.emp_code insp_code,
+    return ['rows' => all("SELECT " . img_item_sql() . " img, i.id, i.sku, i.status, i.system_result, i.inspected_qty, i.rejected_qty, i.submitted_at, i.return_count, j.job_no, j.po_no, j.id jid, c.code client_code, v.name vendor_name, u.emp_code insp_code,
         (SELECT COUNT(*) FROM item_photos p WHERE p.item_id=i.id) nph FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
         LEFT JOIN users u ON u.id=j.inspector_id WHERE i.status IN ('SUBMITTED','UNDER_REVIEW','RETURNED') ORDER BY CASE i.status WHEN 'RETURNED' THEN 1 ELSE 0 END, i.submitted_at"),
         'concessions' => all("SELECT i.id, i.report_no, i.sku, i.concession_due, c.code client_code, v.name vendor_name FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id WHERE i.concession_status='PENDING'")];
 });
 function review_payload(int $id): array {
-    $it = one('SELECT * FROM qc_items WHERE id=?', [$id]); if (!$it) fail('Not found', 404);
+    $it = one('SELECT * FROM qc_items WHERE id=?', [$id]); if (!$it) fail('Not found', 404); $it['img'] = item_img($id);
     $job = job_load((int)$it['job_id']); $job['scope_label'] = scope_label($job); $job['rule'] = result_rule_text($job);
     $def = all('SELECT * FROM item_defects WHERE item_id=?', [$id]);
     $photos = array_map(fn($p) => $p + ['url' => url('file', ['p' => $p['path']])], all('SELECT * FROM item_photos WHERE item_id=? ORDER BY id', [$id]));
@@ -117,7 +117,7 @@ api('GET', 'reports', [...R_INT, 'client', 'vendor'], function () {
     [$sc, $sp] = job_scope('j');
     $F = ['client' => (int)in_('client'), 'vendor' => (int)in_('vendor'), 'insp' => (int)in_('insp'), 'q' => trim((string)in_('q')), 'res' => (string)in_('res'),
         'from' => (string)in_('from', date('Y-m-01', strtotime('-2 months'))), 'to' => (string)in_('to', today())];
-    $sql = "SELECT i.id, i.report_no, i.rev, i.sku, i.final_result, i.concession_status, i.approved_at, i.inspected_qty, i.rejected_qty, j.po_no, j.job_no, j.id jid, j.status jstatus, c.code client_code, v.name vendor_name, u.emp_code insp_code,
+    $sql = "SELECT " . img_item_sql() . " img, i.id, i.report_no, i.rev, i.sku, i.final_result, i.concession_status, i.approved_at, i.inspected_qty, i.rejected_qty, j.po_no, j.job_no, j.id jid, j.status jstatus, c.code client_code, v.name vendor_name, u.emp_code insp_code,
         (SELECT COUNT(*) FROM email_log e WHERE e.item_id=i.id OR (e.job_id=j.id AND e.item_id IS NULL)) emails, (SELECT COUNT(*) FROM qc_items x WHERE x.job_id=j.id) nsku
         FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=j.inspector_id WHERE i.status='APPROVED' AND $sc";
     $p = $sp;
@@ -139,6 +139,7 @@ api('GET', 'reports', [...R_INT, 'client', 'vendor'], function () {
 api('GET', 'report', [...R_INT, 'client', 'vendor'], function () {
     $it = one('SELECT * FROM qc_items WHERE id=?', [(int)in_('id')]); $job = $it ? job_load((int)$it['job_id']) : null;
     if (!$job || !can_see_job($job) || $it['status'] !== 'APPROVED') fail('Report not available', 404);
+    $it['img'] = item_img((int)$it['id']);
     $rej = (int)$it['rejected_qty'];
     $versions = is_internal() ? array_map('basename', glob(UPLOAD_DIR . '/reports/' . file_safe((string)$it['report_no']) . '*.pdf') ?: []) : [];
     return ['item' => $it, 'job' => $job, 'admin_email' => setting('admin_email'), 'mail_off' => setting('mail_transport', 'none') === 'none',
@@ -153,11 +154,11 @@ api('GET', 'report', [...R_INT, 'client', 'vendor'], function () {
 api('GET', 'approvals', ['client', 'vendor', 'super_admin', 'qc_manager'], function () {
     [$sc, $sp] = job_scope('j'); $r = role();
     $hw = $r === 'client' ? " AND i.hold_for='client'" : ($r === 'vendor' ? " AND i.hold_for='vendor'" : '');
-    $holds = all("SELECT i.id, i.sku, i.product, i.hold_for, i.hold_reason, i.hold_by, i.hold_at, j.po_no, j.job_no, j.id jid, c.code client_code, v.name vendor_name FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
+    $holds = all("SELECT " . img_item_sql() . " img, i.id, i.sku, i.product, i.hold_for, i.hold_reason, i.hold_by, i.hold_at, j.po_no, j.job_no, j.id jid, c.code client_code, v.name vendor_name FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
         WHERE $sc AND i.hold_status='PENDING' $hw ORDER BY i.hold_at", $sp);
     foreach ($holds as &$h) $h['photos'] = array_map(fn($p) => url('file', ['p' => $p['path']]), all('SELECT path FROM item_photos WHERE item_id=? ORDER BY id DESC LIMIT 4', [$h['id']]));
     unset($h);
-    $conc = $r === 'vendor' ? [] : all("SELECT i.id, i.report_no, i.sku, i.inspected_qty, i.manager_note, i.deviation_json, i.approved_at, i.concession_due, j.po_no, c.code client_code, v.name vendor_name, u.name mgr FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=i.approved_by
+    $conc = $r === 'vendor' ? [] : all("SELECT " . img_item_sql() . " img, i.id, i.report_no, i.sku, i.inspected_qty, i.manager_note, i.deviation_json, i.approved_at, i.concession_due, j.po_no, c.code client_code, v.name vendor_name, u.name mgr FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=i.approved_by
         WHERE $sc AND i.concession_status='PENDING' ORDER BY i.approved_at", $sp);
     foreach ($conc as &$c) $c['deviation'] = jdec($c['deviation_json']);
     unset($c);

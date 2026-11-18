@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { fileUrl, pdfUrl, post } from '../app/api';
-import { Badge, Empty, Flow, Icon, Loader, Result, Sel, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Flow, Icon, Loader, Result, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdate, fdt, num } from '../app/util';
 import { SchedulePanel } from './Requests';
 
@@ -36,14 +36,18 @@ export default function RequestView() {
             {!!d.attachments.length && <div className="actions mt">{d.attachments.map((a) => <a key={a.id} className="pill" target="_blank" rel="noreferrer" href={fileUrl(a.path)}>📎 {a.name}</a>)}</div>}
           </div>
           <div className="card"><div className="card-h"><h2>SKUs / designs ({d.items.length})</h2></div>
-            <div className="tbl-wrap"><table className="t"><thead><tr><th>SKU</th><th>Product</th><th>Style ref / stone</th><th>Metal / plating</th><th className="num">Order</th><th className="num">Ready</th><th className="num">Insp. qty</th><th className="num">Rej.</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
-              {d.items.map((i) => { const pub = i.status === 'APPROVED'; return <tr key={i.id}>
-                <td className="mono strong">{i.sku}</td><td>{i.product}</td><td>{i.style_ref || '—'}<br /><small>{i.stone_setting}</small></td><td>{i.metal}<br /><small>{i.plating}</small></td>
+            <div className="tbl-wrap"><table className="t"><thead><tr><th>Image</th><th>SKU</th><th>Product</th><th>Style ref / stone</th><th>Metal / plating</th><th className="num">Order</th><th className="num">Ready</th><th className="num">Insp. qty</th><th className="num">Rej.</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
+              {d.items.map((i) => { const pub = i.status === 'APPROVED'; return <Fragment key={i.id}><tr>
+                <td><Thumb src={i.img} size={56} alt={i.sku} /></td><td><b className="mono">{i.sku}</b>{i.target_weight && <><br /><small className="muted" style={{ whiteSpace: 'nowrap' }}>{i.target_weight}</small></>}</td><td>{i.product}</td><td>{i.style_ref || '—'}<br /><small>{i.stone_setting}</small></td><td>{i.metal}<br /><small>{i.plating}</small></td>
                 <td className="num">{num(i.order_qty)}</td><td className="num">{num(i.ready_qty)}</td><td className="num">{num(i.insp_qty)}</td><td className="num">{i.status === 'PENDING' ? '—' : num(i.rejected_qty)}</td>
                 <td><Badge s={i.status} />{i.hold_status === 'PENDING' && <><br /><small>waiting {i.hold_for}</small></>}</td>
                 <td>{i.final_result ? <Result r={i.final_result} /> : i.system_result ? <small>sys: {i.system_result}</small> : '—'}</td>
                 <td>{pub ? <Link className="btn sm" to={'/report/' + i.id}>Report</Link> : c.review && ['SUBMITTED', 'UNDER_REVIEW'].includes(i.status) ? <Link className="btn sm pri" to={'/review/' + i.id}>Review</Link>
-                  : i.hold_status === 'PENDING' && r === i.hold_for ? <Link className="btn sm pri" to="/approvals">Respond</Link> : null}</td></tr>; })}
+                  : i.hold_status === 'PENDING' && r === i.hold_for ? <Link className="btn sm pri" to="/approvals">Respond</Link> : null}</td></tr>
+                {(i.spec_detail || i.instructions) && <tr className="sub"><td></td><td colSpan={10}><details className="specbox"><summary>Stones, size &amp; client instructions{i.instructions ? ' ⚠' : ''}</summary>
+                  <div className="specgrid">{i.instructions && <div className="note gold" style={{ margin: 0 }}><b>Client instructions:</b><p className="spec-pre">{i.instructions}</p></div>}
+                  <div>{(i.length || i.lock_type) && <p className="spec-pre"><b>Size / lock:</b> {[i.length, i.lock_type].filter(Boolean).join(' · ')}</p>}{i.spec_detail && <p className="spec-pre">{i.spec_detail}</p>}</div></div></details></td></tr>}
+                </Fragment>; })}
             </tbody></table></div>
           </div>
           {!!d.emails.length && <div className="card"><h2 className="mb">Email history</h2><table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>

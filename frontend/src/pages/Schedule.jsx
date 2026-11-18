@@ -41,7 +41,7 @@ export default function Schedule() {
         {d.inspectors.map((u) => [<div key={'i' + u.id} className="wi"><span className="avatar">{u.name[0]}</span><span>{u.name.split(' ')[0]}<br /><small>{u.emp_code} · {u.location}</small></span></div>,
           ...d.days.map((x) => slot(u.id, x, grid[u.id]?.[x]))])}
         <div className="wi" style={{ color: 'var(--ruby)' }}><span className="avatar" style={{ background: 'var(--ruby-l)', color: 'var(--ruby)' }}>!</span>Unassigned</div>
-        {d.days.map((x) => <div key={'u' + x} className="slot" style={{ background: '#fffafa' }}>{(un[x] || []).map(chip)}</div>)}
+        {d.days.map((x) => <div key={'u' + x} className="slot" style={{ background: '#f8fafb' }}>{(un[x] || []).map(chip)}</div>)}
       </div>
       {d.can_drag && <p className="muted" style={{ fontSize: 12.5 }}>Drag a job from “Unassigned” (or another inspector) onto an inspector row &amp; day to assign it — notification goes out automatically.</p>}
     </Page>; }}</Loader>;

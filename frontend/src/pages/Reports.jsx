@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl } from '../app/api';
-import { Badge, Empty, Kpi, Loader, Result, Sel, useApi } from '../app/ui';
+import { Badge, Empty, Kpi, Loader, Result, Sel, useApi, Thumb } from '../app/ui';
 import { fdate, fdt, num, pct } from '../app/util';
 
 export default function Reports() {
@@ -26,7 +26,7 @@ export default function Reports() {
         </form>
         {!d.rows.length ? <Empty>No approved reports for these filters.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>Report no.</th><th>Date</th>{r !== 'client' && <th>Client</th>}{r !== 'vendor' && <th>Vendor</th>}<th>PO</th><th>SKU</th>{internal && <th>Inspector</th>}<th>Result</th>{internal && <th>Email</th>}<th>Download</th></tr></thead><tbody>
           {d.rows.map((x) => <tr key={x.id}><td><Link className="mono strong" to={'/report/' + x.id}>{x.report_no}</Link>{+x.rev ? <> <span className="badge b-conditional">REV {String(x.rev).padStart(2, '0')}</span></> : null}</td>
-            <td>{fdate(x.approved_at, 'd M')}</td>{r !== 'client' && <td>{x.client_code}</td>}{r !== 'vendor' && <td>{x.vendor_name}</td>}<td className="mono">{x.po_no}</td><td className="mono">{x.sku}</td>{internal && <td>{x.insp_code}</td>}
+            <td>{fdate(x.approved_at, 'd M')}</td>{r !== 'client' && <td>{x.client_code}</td>}{r !== 'vendor' && <td>{x.vendor_name}</td>}<td className="mono">{x.po_no}</td><td><div className="skucell"><Thumb src={x.img} size={40} alt={x.sku} /><span className="mono">{x.sku}</span></div></td>{internal && <td>{x.insp_code}</td>}
             <td><Result r={x.final_result} />{x.concession_status && <><br /><small>concession {x.concession_status.toLowerCase()}</small></>}</td>
             {internal && <td>{+x.emails ? <Badge s="SENT" /> : <span className="muted">—</span>}</td>}
             <td><span className="actions" style={{ flexWrap: 'nowrap' }}><a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ item: x.id })}>Design PDF</a>

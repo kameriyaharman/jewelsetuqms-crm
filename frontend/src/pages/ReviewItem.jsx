@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Loader, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Loader, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdt, num, pct } from '../app/util';
 
 export default function ReviewItem() {
@@ -25,6 +25,7 @@ export default function ReviewItem() {
       <div className="grid g-73">
         <div>
           <div className="card"><div className="card-h"><h2>Inspection review — {it.report_no || `${j.job_no} / ${it.sku}`}</h2><Badge s={it.status} /></div>
+            {(it.img || it.instructions) && <div className="skucell mb" style={{ alignItems: 'flex-start' }}><Thumb src={it.img} size={96} alt={it.sku} />{it.instructions && <div className="note gold" style={{ margin: 0, flex: 1 }}><b>Client instructions:</b><p className="spec-pre">{it.instructions}</p></div>}</div>}
             <div className="kv">
               <div><small>Inspector</small><b>{j.inspector_code} · {j.inspector_name}</b></div><div><small>Vendor</small><b>{j.vendor_name}</b></div><div><small>SKU</small><b className="mono">{it.sku}</b></div>
               <div><small>PO</small><b>{j.po_no}</b></div><div><small>Submitted</small><b>{fdt(it.submitted_at)}</b></div><div><small>System result</small><b><Badge s={it.system_result || 'PENDING'} /></b></div>
@@ -45,7 +46,7 @@ export default function ReviewItem() {
               <p className="muted" style={{ fontSize: 12 }}>Critical {d.sev.CRITICAL} · Major {d.sev.MAJOR} · Minor {d.sev.MINOR}</p></div>
           </div>
           <div className="card mt"><h2 className="mb">Quality checks &amp; tests</h2>
-            <div className="grid g2" style={{ gap: '4px 20px' }}>{[...d.checks, ...d.tests].map((c, k) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f3ebe4', padding: '6px 0' }}>
+            <div className="grid g2" style={{ gap: '4px 20px' }}>{[...d.checks, ...d.tests].map((c, k) => <div key={k} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #edf1f4', padding: '6px 0' }}>
               <span>{c.name}{c.remark ? <><br /><small>{c.remark}</small></> : null}</span><Badge s={c.result || 'PENDING'} /></div>)}</div>
             <h2 className="mb mt">Measurements</h2>
             <table className="t"><thead><tr><th>Parameter</th><th>Spec</th><th>Tolerance</th><th>Actual</th><th>Result</th></tr></thead><tbody>

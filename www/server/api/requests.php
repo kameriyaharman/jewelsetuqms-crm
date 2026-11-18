@@ -13,7 +13,7 @@ api('GET', 'requests', [...R_INT, 'client', 'vendor'], function () {
     if ($cf) { $w .= ' AND j.client_id=?'; $p[] = $cf; }
     if ($vf) { $w .= ' AND j.vendor_id=?'; $p[] = $vf; }
     if ($qs) { $w .= ' AND (j.po_no LIKE ? OR j.req_no LIKE ? OR j.job_no LIKE ? OR j.id IN (SELECT job_id FROM qc_items WHERE sku LIKE ?))'; array_push($p, "%$qs%", "%$qs%", "%$qs%", "%$qs%"); }
-    $rows = all("SELECT j.*, c.code client_code, v.name vendor_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus,
+    $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus,
         (SELECT SUM(ready_qty) FROM qc_items i WHERE i.job_id=j.id) qty $w ORDER BY CASE j.status WHEN 'REQUESTED' THEN 0 WHEN 'DRAFT' THEN 1 ELSE 2 END, j.id DESC LIMIT 300", $p);
     foreach ($rows as &$r) $r['scope_label'] = scope_label($r);
     return ['rows' => $rows, 'counts' => $counts, 'total' => array_sum($counts)];
@@ -23,7 +23,7 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
     $job = job_load((int)in_('id'));
     if (!$job || !can_see_job($job)) fail('Request not found', 404);
     $job['scope_label'] = scope_label($job);
-    $items = all('SELECT * FROM qc_items WHERE job_id=? ORDER BY id', [$job['id']]);
+    $items = all('SELECT i.*, ' . img_item_sql() . ' img FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']]);
     $ids = array_map('intval', array_column($items, 'id'));
     $log = all('SELECT a.*, u.name uname FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE (a.entity=? AND a.entity_id=?) ' .
         ($ids ? "OR (a.entity='item' AND a.entity_id IN (" . implode(',', $ids) . '))' : '') . ' ORDER BY a.id DESC LIMIT 40', ['job', $job['id']]);
@@ -55,7 +55,7 @@ api('GET', 'request/form', ['super_admin', 'back_office', 'client', 'vendor'], f
     if ($id = (int)in_('id')) {
         $job = job_load($id);
         if (!$job || !can_see_job($job) || !in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED'], true) || (in_array(role(), ['client', 'vendor'], true) && !in_array($job['status'], ['DRAFT', 'REQUESTED'], true))) fail('This request can no longer be edited.', 409);
-        $items = all('SELECT * FROM qc_items WHERE job_id=? ORDER BY id', [$id]); $atts = all('SELECT * FROM attachments WHERE job_id=?', [$id]);
+        $items = all('SELECT i.*, ' . img_item_sql() . ' img FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$id]); $atts = all('SELECT * FROM attachments WHERE job_id=?', [$id]);
     }
     return ['job' => $job, 'items' => $items, 'attachments' => $atts, 'next_req_no' => next_req_no()];
 });
@@ -239,9 +239,82 @@ api('GET', 'import', ['super_admin', 'back_office', 'vendor'], function () {
     $clients = $isV ? all("SELECT c.id, c.code, c.name FROM clients c JOIN client_vendor m ON m.client_id=c.id WHERE m.vendor_id=? AND c.status='ACTIVE' ORDER BY c.code", [user()['vendor_id']])
         : all("SELECT id, code, name FROM clients WHERE status='ACTIVE' ORDER BY code");
     require_once ROOT . '/app/xlsx.php';
-    return ['clients' => $clients, 'import' => $_SESSION['import'] ?? null, 'columns' => IMPORT_COLS, 'vendor_mode' => $isV];
+    $vend = $isV ? [] : all("SELECT m.client_id, v.id, v.name, v.code FROM client_vendor m JOIN vendors v ON v.id=m.vendor_id WHERE v.status='ACTIVE' ORDER BY v.name");
+    return ['clients' => $clients, 'vendors' => $vend, 'import' => $_SESSION['import'] ?? null, 'columns' => IMPORT_COLS, 'vendor_mode' => $isV];
 });
 api('POST', 'import/reset', ['super_admin', 'back_office', 'vendor'], function () { unset($_SESSION['import']); return ['ok' => true]; });
+/** Save a picture taken out of an uploaded Excel file; returns its upload path. */
+function import_img_save(array $img): ?string {
+    $dir = UPLOAD_DIR . '/imports/img'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $name = date('Ymd_His') . '_' . bin2hex(random_bytes(5)) . '.' . $img['ext'];
+    return @file_put_contents("$dir/$name", $img['data']) ? "imports/img/$name" : null;
+}
+/** Product category from words in the sheet or the SKU prefix. */
+function guess_product(string $sku, array $words): string {
+    $cats = ['bracelet' => 'Bracelet', 'bangle' => 'Bangle', 'pendant' => 'Pendant', 'earring' => 'Earring', 'ring' => 'Ring', 'necklace' => 'Necklace',
+        'nackla' => 'Necklace', 'chain' => 'Chain', 'anklet' => 'Anklet', 'set' => 'Set', 'stud' => 'Earring', 'hoop' => 'Earring'];
+    foreach ($words as $w) { $lw = strtolower(trim($w)); foreach ($cats as $k => $v) if ($lw === $k || $lw === $k . 's') return $v; }
+    $pre = ['SET' => 'Set', 'BR' => 'Bracelet', 'BG' => 'Bangle', 'PD' => 'Pendant', 'PN' => 'Pendant', 'ER' => 'Earring', 'EA' => 'Earring', 'RG' => 'Ring', 'RNG' => 'Ring',
+        'KNK' => 'Necklace', 'NK' => 'Necklace', 'NCK' => 'Necklace', 'CH' => 'Chain', 'AN' => 'Anklet', 'KBR' => 'Bracelet', 'KPD' => 'Pendant', 'KER' => 'Earring'];
+    uksort($pre, fn($x, $y) => strlen($y) - strlen($x));
+    foreach ($pre as $k => $v) if (str_starts_with(strtoupper($sku), $k)) return $v;
+    return 'Jewellery';
+}
+function nfmt($v, int $dp = 3): string { return is_numeric($v) ? rtrim(rtrim(number_format((float)$v, $dp, '.', ''), '0'), '.') : (string)$v; }
+/**
+ * Client "tech sheet" layout (e.g. C-142): one block of rows per design with the picture in the IMAGE column,
+ * metal / gross weight on the first row, stone rows below and plating, size, lock written under the design no.
+ */
+function parse_techsheet(array $rows, array $images, int $hdrRow, array $col): array {
+    $nums = array_keys($rows); $last = max($nums);
+    $g = fn($rn, $k) => ($col[$k] ?? null) === null ? '' : trim((string)($rows[$rn][$col[$k]] ?? ''));
+    $starts = [];
+    foreach ($nums as $rn) if ($rn > $hdrRow && $g($rn, 'design') !== '' && ($g($rn, 'metal') !== '' || $g($rn, 'qty') !== '' || $g($rn, 'gross') !== '')) $starts[] = $rn;
+    $out = []; $used = [];
+    foreach ($starts as $k => $st) {
+        $end = ($starts[$k + 1] ?? ($last + 1)) - 1;
+        $sku = strtoupper(preg_replace('/\s+/', '', $g($st, 'design')));
+        $notes = []; $stones = []; $codes = [];
+        for ($rn = $st; $rn <= $end; $rn++) {
+            if (!isset($rows[$rn])) continue;
+            if ($rn > $st && ($d = $g($rn, 'design')) !== '') { if (preg_match('/^[A-Z]{1,6}[-]?\d{2,}[A-Z0-9\-]*$/i', $d) && !preg_match('/["”]|MM\b/i', $d)) $codes[] = strtoupper($d); else $notes[] = $d; }
+            $stone = $g($rn, 'stone');
+            if ($stone === '') continue;
+            // a stone line has a shape/size or a setting; a total row (pcs + weight sums only) or RHODIUM / CHAIN text is a note
+            if ($g($rn, 'shape') === '' && $g($rn, 'setting') === '' && $g($rn, 'stype') === '') { $notes[] = $stone; continue; }
+            $set = implode(' / ', array_filter([$g($rn, 'stype'), $g($rn, 'setting')]));
+            $tw = $g($rn, 'tw');
+            $stones[] = ['name' => $stone, 'setting' => $set, 'shape' => $g($rn, 'shape'), 'pcs' => $g($rn, 'pcs'), 'ct' => $tw];
+        }
+        $notes = array_values(array_unique(array_map('trim', $notes))); $plating = ''; $length = []; $lock = ''; $words = [];
+        foreach ($notes as $n) {
+            $ln = strtolower($n);
+            if (str_contains($ln, 'rhodium') || str_contains($ln, 'plating') || preg_match('/\b(gold|rose|black)\s*plat/i', $n)) { $plating = $plating ?: ucwords($ln); continue; }
+            if (preg_match('/lock|clasp|push\s*post|screw|latch|hook|lever/i', $n)) { $lock = $lock ?: $n; continue; }
+            if (preg_match('/["”]|inch|\bcm\b|\bmm\b|\bcl\s*\d|chain/i', $n)) { $length[] = $n; continue; }
+            $words[] = $n;
+        }
+        $product = guess_product($sku, $words);
+        $words = array_values(array_filter($words, fn($w) => guess_product('', [$w]) === 'Jewellery'));
+        $gross = $g($st, 'gross'); $mw = $g($st, 'mweight');
+        $weight = trim(($gross !== '' ? 'Gross ' . nfmt($gross) . ' g' : '') . ($mw !== '' ? ' · Metal ' . nfmt($mw) . ' g' : ''), ' ·');
+        $sl = array_map(fn($x) => trim($x['name'] . ($x['setting'] ? ' · ' . $x['setting'] : '') . ($x['shape'] ? ' · ' . $x['shape'] : '') . ($x['pcs'] !== '' ? ' × ' . nfmt($x['pcs']) . ' pcs' : '') . ($x['ct'] !== '' ? ' = ' . nfmt($x['ct']) . ' ct' : '')), $stones);
+        $main = $stones[0] ?? null;
+        $stoneShort = $main ? ucwords(strtolower($main['name'])) . ($main['setting'] ? ' / ' . $main['setting'] : '') . (count($stones) > 1 ? ' +' . (count($stones) - 1) . ' more' : '') : '';
+        $totPcs = array_sum(array_map(fn($x) => (float)$x['pcs'], $stones)); $totCt = array_sum(array_map(fn($x) => (float)$x['ct'], $stones));
+        $detail = array_merge($sl ? ['Stones:'] : [], array_map(fn($x) => '• ' . $x, $sl),
+            $stones ? ['Total: ' . nfmt($totPcs) . ' pcs · ' . nfmt($totCt) . ' ct'] : [], $codes ? ['Stone layout / ref: ' . implode(', ', $codes)] : [], $words ? ['Notes: ' . implode(', ', $words)] : []);
+        // the picture whose top-left lies inside this block (or the row just above it, as Excel often anchors there)
+        $lo = $st - 1; $hi = isset($starts[$k + 1]) ? $starts[$k + 1] - 2 : $end;
+        $img = null; foreach ($images as $ii => $im) if (empty($used[$ii]) && $im['row'] >= $lo && $im['row'] <= $hi) { $img = $im; $used[$ii] = true; break; }
+        if (!$img) foreach ($images as $ii => $im) if (empty($used[$ii]) && $im['row'] <= $st && $im['row2'] >= $st) { $img = $im; $used[$ii] = true; break; }
+        $qty = (int)round((float)($g($st, 'qty') ?: 1)); if ($qty <= 0) $qty = 1;
+        $out[] = ['n' => $st, 'sku' => $sku, 'product' => $product, 'metal' => $g($st, 'metal'), 'plating' => $plating, 'weight' => $weight,
+            'length' => implode(' · ', $length), 'lock' => $lock, 'stamping' => '', 'style' => mb_substr(implode(', ', $codes), 0, 250), 'stone' => mb_substr($stoneShort, 0, 250),
+            'detail' => implode("\n", $detail), 'instructions' => $g($st, 'comments'), 'qty' => $qty, 'img' => $img];
+    }
+    return $out;
+}
 api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function () {
     require_once ROOT . '/app/xlsx.php';
     $isV = import_allowed();
@@ -250,45 +323,94 @@ api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function 
     $f = $_FILES['file'] ?? null;
     if (!$client || !$f || $f['error'] !== UPLOAD_ERR_OK) fail('Select a client and an Excel file.');
     $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-    try { $raw = $ext === 'csv' ? csv_read($f['tmp_name']) : xlsx_read($f['tmp_name']); } catch (Throwable $e) { fail('Could not read file: ' . $e->getMessage() . ' (use .xlsx or .csv)'); }
-    if (count($raw) < 2) fail('The file has no data rows.');
-    $hdr = array_map(fn($x) => strtolower(preg_replace('/[^a-z]/i', '', (string)$x)), $raw[0]);
+    try {
+        if ($ext === 'csv') { $book = ['rows' => [], 'images' => []]; foreach (csv_read($f['tmp_name']) as $i => $r) $book['rows'][$i + 1] = $r; }
+        else $book = xlsx_read_full($f['tmp_name']);
+    } catch (Throwable $e) { fail('Could not read file: ' . $e->getMessage() . ' (use .xlsx or .csv)'); }
+    $all = $book['rows']; $images = $book['images'];
+    if (count($all) < 2) fail('The file has no data rows.');
+    $norm = fn($x) => strtolower(preg_replace('/[^a-z]/i', '', (string)$x));
+    // header = first row (within the first 15) that names a SKU / design column
+    $hdrRow = null; $hdr = [];
+    foreach (array_slice($all, 0, 15, true) as $rn => $r) { $h = array_map($norm, $r); if (array_intersect(['sku', 'design', 'designno', 'skudesignno', 'styleno', 'itemsku'], $h)) { $hdrRow = $rn; $hdr = $h; break; } }
+    if ($hdrRow === null) { $hdrRow = array_key_first($all); $hdr = array_map($norm, $all[$hdrRow]); }
     $find = function (array $names) use ($hdr) { foreach ($names as $n) { $k = array_search($n, $hdr, true); if ($k !== false) return $k; } return null; };
     $map = [];
-    foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design'],
+    foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design', 'itemsku', 'styleno'],
         'style' => ['clientstyleref', 'styleref', 'clientstyle', 'refno'], 'stone' => ['stonesetting', 'stone', 'settingtype'],
-        'product' => ['product', 'category'], 'order' => ['orderqty', 'orderquantity', 'order'], 'ready' => ['readyqty', 'readyquantity', 'ready'],
-        'scope' => ['qcscope', 'scope'], 'metal' => ['metal'], 'plating' => ['plating'], 'weight' => ['weight', 'targetweight'], 'length' => ['length'],
-        'lock' => ['lock', 'locktype'], 'stamping' => ['stamping'], 'date' => ['requesteddate', 'qcdate', 'date'], 'spec' => ['specfile', 'spec', 'attachment']] as $k => $names) $map[$k] = $find($names);
-    foreach (($isV ? ['po', 'sku', 'ready'] : ['vendor', 'po', 'sku', 'ready']) as $req) if ($map[$req] === null) fail("Column “$req” not found. Download the template to see the expected columns.");
+        'product' => ['product', 'category', 'item'], 'order' => ['orderqty', 'orderquantity', 'order'], 'ready' => ['readyqty', 'readyquantity', 'ready', 'qty', 'quantity'],
+        'scope' => ['qcscope', 'scope'], 'metal' => ['metal'], 'plating' => ['plating'], 'weight' => ['weight', 'targetweight', 'gross'], 'length' => ['length'],
+        'lock' => ['lock', 'locktype'], 'stamping' => ['stamping'], 'date' => ['requesteddate', 'qcdate', 'date'], 'spec' => ['specfile', 'spec', 'attachment'],
+        'image' => ['image', 'picture', 'photo', 'productimage']] as $k => $names) $map[$k] = $find($names);
+    // defaults from the form, used when the sheet has no such column
+    $fVendor = (int)in_('vendor_id'); $fPo = trim((string)in_('po_no')); $fScope = trim((string)in_('scope'));
+    $tech = $map['po'] === null && $map['vendor'] === null && $find(['design', 'designno']) !== null && ($map['image'] !== null || $map['metal'] !== null);
     $vendors = []; foreach (all('SELECT * FROM vendors') as $v) { $vendors[strtolower($v['name'])] = $v; $vendors[strtolower($v['code'])] = $v; }
     $mapped = array_column(all('SELECT vendor_id FROM client_vendor WHERE client_id=?', [$cid]), 'vendor_id');
     $existing = []; foreach (all("SELECT j.po_no, i.sku FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE j.client_id=? AND j.status NOT IN ('CANCELLED')", [$cid]) as $e) $existing[strtoupper($e['po_no'] . '|' . $e['sku'])] = true;
-    $seen = []; $rows = [];
-    foreach (array_slice($raw, 1) as $n => $r) {
-        $g = fn($k) => $map[$k] === null ? '' : trim((string)($r[$map[$k]] ?? ''));
-        if (!array_filter($r, fn($x) => trim((string)$x) !== '')) continue;
-        $e = []; $w = [];
-        $v = $isV ? one('SELECT * FROM vendors WHERE id=?', [user()['vendor_id']]) : ($vendors[strtolower($g('vendor'))] ?? null);
-        if (!$v && !$isV) foreach ($vendors as $key => $vv) if ($g('vendor') !== '' && str_starts_with($key, strtolower($g('vendor')))) { $v = $vv; break; }
-        if (!$v) $e[] = 'Unknown vendor'; elseif (!in_array($v['id'], $mapped)) $e[] = 'Vendor not mapped to client';
-        $po = $g('po'); $sku = strtoupper($g('sku'));
-        if ($po === '') $e[] = 'PO missing'; if ($sku === '') $e[] = 'SKU missing';
-        $oq = (int)preg_replace('/[^0-9]/', '', $g('order')); $rq = (int)preg_replace('/[^0-9]/', '', $g('ready'));
+    $formVendor = $isV ? one('SELECT * FROM vendors WHERE id=?', [user()['vendor_id']]) : ($fVendor ? one('SELECT * FROM vendors WHERE id=?', [$fVendor]) : null);
+    $fileStem = trim(preg_replace('/[_]+/', ' ', pathinfo($f['name'], PATHINFO_FILENAME)));
+    $seen = []; $rows = []; $nimg = 0;
+    $check = function (array $x, ?array $v, string $po, array $sc, int $oq, int $rq, array $w) use (&$seen, $existing, $mapped, $isV) {
+        $e = [];
+        if (!$v) $e[] = $isV ? 'Unknown vendor' : 'Select vendor'; elseif (!in_array($v['id'], $mapped)) $e[] = 'Vendor not mapped to client';
+        if ($po === '') $e[] = 'PO missing'; if ($x['sku'] === '') $e[] = 'SKU missing';
         if ($rq <= 0) $e[] = 'Ready qty missing'; if ($oq && $rq > $oq) $e[] = 'Ready > Order';
-        $sc = parse_scope($g('scope')) ?? ['scope' => 'BULK', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Bulk 100%'];
-        if ($g('scope') === '') $w[] = 'Scope blank → Bulk 100%';
         if ($sc['bulk_mode'] === 'DEFINED' && $sc['defined_qty'] > $rq) $e[] = 'Defined qty > Ready';
-        $key = strtoupper($po . '|' . $sku);
+        $key = strtoupper($po . '|' . $x['sku']);
         if (isset($seen[$key]) || isset($existing[$key])) $e[] = 'Duplicate SKU'; $seen[$key] = true;
-        if ($g('spec') === '') $w[] = 'Spec file missing';
-        $rows[] = ['n' => $n + 2, 'vendor_id' => $v['id'] ?? null, 'vendor' => $v['name'] ?? $g('vendor'), 'po' => $po, 'sku' => $sku, 'product' => $g('product') ?: 'Necklace',
-            'order' => $oq ?: $rq, 'ready' => $rq, 'scope' => $sc, 'metal' => $g('metal'), 'plating' => $g('plating'), 'weight' => $g('weight'), 'length' => $g('length'),
-            'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => $g('stone'), 'date' => excel_date($g('date')), 'spec' => $g('spec'), 'errors' => $e, 'warnings' => $w,
-            'raw' => array_map(fn($c) => $map[$c] === null ? '' : ($r[$map[$c]] ?? ''), ['vendor', 'po', 'sku', 'style', 'stone', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
+        return $e;
+    };
+    $scDefault = parse_scope($fScope) ?? null;
+    if ($tech) {
+        $col = ['design' => $find(['design', 'designno']), 'image' => $map['image'], 'metal' => $map['metal'], 'gross' => $find(['gross', 'grossweight', 'grosswt']),
+            'mweight' => $find(['metalweight', 'metalwt', 'netweight']), 'stone' => $find(['diamond', 'stone', 'stones', 'gemstone']), 'setting' => $find(['setting']),
+            'shape' => $find(['shapesize', 'shape', 'size']), 'pcs' => $find(['noofpcs', 'pcs', 'nopcs']), 'tw' => $find(['totaldiamondweight', 'totalweight', 'totalcts', 'totalct']),
+            'qty' => $find(['qty', 'quantity', 'orderqty']), 'comments' => $find(['comments', 'comment', 'remarks', 'remark', 'instructions'])];
+        // unnamed column right after the stone column holds Prong / Bezel
+        $col['stype'] = ($col['stone'] !== null && ($hdr[$col['stone'] + 1] ?? 'x') === '' ) ? $col['stone'] + 1 : null;
+        $sc = $scDefault ?? ['scope' => 'SAMPLE', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Sample'];
+        $po = $fPo !== '' ? $fPo : mb_substr($fileStem, 0, 60);
+        foreach (parse_techsheet($all, $images, $hdrRow, $col) as $x) {
+            $w = []; if ($fPo === '') $w[] = 'PO taken from file name'; if (!$x['img']) $w[] = 'No image';
+            $img = $x['img'] ? import_img_save($x['img']) : null; if ($img) $nimg++;
+            $e = $check($x, $formVendor, $po, $sc, $x['qty'], $x['qty'], $w);
+            $rows[] = array_merge($x, ['vendor_id' => $formVendor['id'] ?? null, 'vendor' => $formVendor['name'] ?? '—', 'po' => $po, 'order' => $x['qty'], 'ready' => $x['qty'], 'scope' => $sc,
+                'date' => null, 'spec' => '', 'errors' => $e, 'warnings' => $w, 'img' => $img,
+                'raw' => [$formVendor['name'] ?? '', $po, $x['sku'], $img ? 'yes' : '', $x['style'], $x['stone'], $x['product'], $x['qty'], $x['qty'], $sc['label'], $x['metal'], $x['plating'], $x['weight'], $x['length'], $x['lock'], '', '', '']]);
+        }
+        if (!$rows) fail('No designs found in this sheet. Each design needs its design no. and metal on the first row.');
+    } else {
+        foreach (($isV ? ['sku', 'ready'] : ['sku', 'ready']) as $req) if ($map[$req] === null) fail("Column “$req” not found. Download the template to see the expected columns.");
+        if ($map['po'] === null && $fPo === '') fail('Column “PO No” not found — add it to the sheet or type the PO no. in the form.');
+        if (!$isV && $map['vendor'] === null && !$formVendor) fail('Column “Vendor” not found — add it to the sheet or select the vendor in the form.');
+        foreach ($all as $rn => $r) {
+            if ($rn <= $hdrRow) continue;
+            $g = fn($k) => $map[$k] === null ? '' : trim((string)($r[$map[$k]] ?? ''));
+            if (!array_filter($r, fn($x) => trim((string)$x) !== '')) continue;
+            $w = [];
+            $v = $isV ? $formVendor : ($map['vendor'] !== null && $g('vendor') !== '' ? ($vendors[strtolower($g('vendor'))] ?? null) : $formVendor);
+            if (!$v && !$isV && $g('vendor') !== '') foreach ($vendors as $key => $vv) if (str_starts_with($key, strtolower($g('vendor')))) { $v = $vv; break; }
+            $po = $g('po') !== '' ? $g('po') : $fPo; $sku = strtoupper($g('sku'));
+            $oq = (int)preg_replace('/[^0-9]/', '', $g('order')); $rq = (int)preg_replace('/[^0-9]/', '', $g('ready'));
+            $sc = parse_scope($g('scope')) ?? $scDefault ?? ['scope' => 'BULK', 'bulk_mode' => '100', 'aql_major' => 2.5, 'defined_qty' => 0, 'label' => 'Bulk 100%'];
+            if ($g('scope') === '' && !$scDefault) $w[] = 'Scope blank → Bulk 100%';
+            if ($g('spec') === '') $w[] = 'Spec file missing';
+            $im = null; foreach ($images as $x) if ($x['row'] === $rn) { $im = $x; break; }
+            if (!$im) foreach ($images as $x) if ($x['row'] < $rn && $x['row2'] >= $rn) { $im = $x; break; }
+            $img = $im ? import_img_save($im) : null; if ($img) $nimg++;
+            $x = ['sku' => $sku];
+            $e = $check($x, $v, $po, $sc, $oq, $rq, $w);
+            $rows[] = ['n' => $rn, 'vendor_id' => $v['id'] ?? null, 'vendor' => $v['name'] ?? $g('vendor'), 'po' => $po, 'sku' => $sku, 'product' => $g('product') ?: 'Necklace',
+                'order' => $oq ?: $rq, 'ready' => $rq, 'scope' => $sc, 'metal' => $g('metal'), 'plating' => $g('plating'), 'weight' => $g('weight'), 'length' => $g('length'),
+                'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => $g('stone'), 'date' => excel_date($g('date')), 'spec' => $g('spec'),
+                'detail' => '', 'instructions' => '', 'img' => $img, 'errors' => $e, 'warnings' => $w,
+                'raw' => array_map(fn($c) => $c === 'image' ? ($img ? 'yes' : '') : ($map[$c] === null ? '' : ($r[$map[$c]] ?? '')), ['vendor', 'po', 'sku', 'image', 'style', 'stone', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
+        }
     }
     $saved = save_upload($f, 'imports', ['xlsx', 'csv', 'xls']);
-    $_SESSION['import'] = ['client_id' => $cid, 'client' => $client['code'], 'file' => $f['name'], 'size' => $f['size'], 'rows' => $rows, 'path' => $saved['path'] ?? null];
+    $_SESSION['import'] = ['client_id' => $cid, 'client' => $client['code'], 'file' => $f['name'], 'size' => $f['size'], 'rows' => $rows, 'path' => $saved['path'] ?? null,
+        'format' => $tech ? 'techsheet' : 'table', 'images' => $nimg];
     return ['ok' => true, 'import' => $_SESSION['import']];
 });
 api('POST', 'import/create', ['super_admin', 'back_office', 'vendor'], function () {
@@ -308,8 +430,10 @@ api('POST', 'import/create', ['super_admin', 'back_office', 'vendor'], function 
         foreach ($g as $r) {
             $plan = item_plan($job, $r['ready']);
             insert('qc_items', ['job_id' => $jid, 'sku' => $r['sku'], 'product' => $r['product'], 'metal' => $r['metal'], 'plating' => $r['plating'], 'target_weight' => $r['weight'],
-                'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'style_ref' => $r['style'], 'stone_setting' => $r['stone'], 'master_sample' => 'Approved Master Sample Available',
+                'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'style_ref' => $r['style'], 'stone_setting' => $r['stone'], 'spec_detail' => $r['detail'] ?? '', 'instructions' => $r['instructions'] ?? '', 'master_sample' => 'Approved Master Sample Available',
                 'order_qty' => $r['order'], 'ready_qty' => $r['ready'], 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'status' => 'PENDING', 'updated_at' => now()]);
+            $iid = (int)db()->lastInsertId();
+            if (!empty($r['img'])) insert('item_photos', ['item_id' => $iid, 'kind' => 'product', 'path' => $r['img'], 'remark' => 'From Excel', 'created_at' => now()]);
         }
         if ($imp['path']) insert('attachments', ['job_id' => $jid, 'item_id' => null, 'path' => $imp['path'], 'name' => $imp['file'], 'created_at' => now()]);
         audit('job', $jid, 'CREATE', 'source', null, 'Excel import');
@@ -330,11 +454,11 @@ api('GET', 'import/template', ['super_admin', 'back_office', 'vendor'], function
         $v = role() === 'vendor' ? val('SELECT name FROM vendors WHERE id=?', [user()['vendor_id']]) : 'Ashok Jewels';
         $d = fn($n) => date('d-m-Y', strtotime("+$n days"));
         $rows = [IMPORT_COLS,
-            [$v, '81966', 'KNK01268FS0033', 'KP-FS0033', 'CZ / Prong', 'Necklace', 1150, 1150, 'Bulk 100%', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS', $d(3), 'Spec.pdf'],
-            [$v, '81966', 'RNG00451', 'KP-RG451', 'CZ / Prong', 'Ring', 500, 500, 'Bulk 100%', '925 Silver', 'White rhodium', '2.40 g', 'Size 6', '', '925', $d(3), 'CAD.jpg'],
-            ['Nirvana', '82001', 'ABC001', 'KP-ABC1', 'MOP / Bezel', 'Pendant', 700, 700, 'AQL-1.5', '925 Silver', 'White rhodium', '1.20 g', '20 mm', '', '925', $d(4), ''],
-            ['Nirvana', '82002', 'ABC002', 'KP-ABC2', '—', 'Chain', 10, 10, 'Sample', '925 Silver', '', '4.00 g', '20 inch', 'Lobster lock', '925', $d(4), ''],
-            [$v, '81968', 'KNK00511BR0007', 'KP-BR0007', 'Marquise CZ / Prong', 'Bracelet', 300, 300, 'Defined 50', '925 Silver', 'Rose gold', '6.20 g', '7 inch', 'Box clasp', '925 + ARCL', $d(5), '']];
+            [$v, '81966', 'KNK01268FS0033', '', 'KP-FS0033', 'CZ / Prong', 'Necklace', 1150, 1150, 'Bulk 100%', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS', $d(3), 'Spec.pdf'],
+            [$v, '81966', 'RNG00451', '', 'KP-RG451', 'CZ / Prong', 'Ring', 500, 500, 'Bulk 100%', '925 Silver', 'White rhodium', '2.40 g', 'Size 6', '', '925', $d(3), 'CAD.jpg'],
+            ['Nirvana', '82001', 'ABC001', '', 'KP-ABC1', 'MOP / Bezel', 'Pendant', 700, 700, 'AQL-1.5', '925 Silver', 'White rhodium', '1.20 g', '20 mm', '', '925', $d(4), ''],
+            ['Nirvana', '82002', 'ABC002', '', 'KP-ABC2', '—', 'Chain', 10, 10, 'Sample', '925 Silver', '', '4.00 g', '20 inch', 'Lobster lock', '925', $d(4), ''],
+            [$v, '81968', 'KNK00511BR0007', '', 'KP-BR0007', 'Marquise CZ / Prong', 'Bracelet', 300, 300, 'Defined 50', '925 Silver', 'Rose gold', '6.20 g', '7 inch', 'Box clasp', '925 + ARCL', $d(5), '']];
         $name = 'QTRACK_QC_REQUIREMENT_TEMPLATE.xlsx';
     }
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

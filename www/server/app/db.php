@@ -60,7 +60,7 @@ function db_install(): void {
             created_by INT NULL, created_at $DT, scheduled_at $DT NULL, assigned_at $DT NULL, started_at $DT NULL,
             submitted_at $DT NULL, approved_at $DT NULL, emailed_at $DT NULL, closed_at $DT NULL, po_pdf $T NULL",
         'qc_items' => "id $pk, job_id INT NOT NULL, sku VARCHAR(80) NOT NULL, product $T, metal $T, plating $T, target_weight $T,
-            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
+            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, spec_detail TEXT NULL, instructions TEXT NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
             insp_qty INT DEFAULT 0, plan_json TEXT, status VARCHAR(20) DEFAULT 'PENDING', step INT DEFAULT 0,
             inspected_qty INT DEFAULT 0, accepted_qty INT DEFAULT 0, rejected_qty INT DEFAULT 0, reinspection INT DEFAULT 0,
             gps $T NULL, insp_date $D NULL, checks_json $TXT, meas_json $TXT, tests_json $TXT,
@@ -89,7 +89,9 @@ function db_install(): void {
 }
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
-    if ((int)setting('schema_version', '1') >= 2) return;
+    $ver = (int)setting('schema_version', '1');
+    if ($ver >= 3) return;
+    if ($ver === 2) { db_migrate_v3(); return; }
     $T = 'VARCHAR(255)';
     $cols = ['clients' => ['fail_threshold' => 'DECIMAL(6,2) DEFAULT 80'], 'vendors' => ['short_code' => 'VARCHAR(20)'], 'users' => ['designation' => "$T NULL"],
         'checkpoints' => ['pass_remark' => "$T NULL", 'fail_remark' => "$T NULL", 'na_remark' => "$T NULL"], 'onsite_tests' => ['method' => "$T NULL"],
@@ -101,6 +103,14 @@ function db_migrate(): void {
     require_once __DIR__ . '/seed.php';
     seed_masters_v2(true);
     set_setting('schema_version', '2');
+    db_migrate_v3();
+}
+/** v3: full spec breakdown (stones etc.) and client instructions per SKU, imported from tech sheets. */
+function db_migrate_v3(): void {
+    foreach (['spec_detail' => 'TEXT NULL', 'instructions' => 'TEXT NULL'] as $c => $def) {
+        try { db()->query("SELECT $c FROM qc_items LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE qc_items ADD COLUMN $c $def"); }
+    }
+    set_setting('schema_version', '3');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

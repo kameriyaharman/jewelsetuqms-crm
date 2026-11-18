@@ -3,7 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 
 import { MPage } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { flushQueue, pdfUrl, queue } from '../app/api';
-import { Badge, Empty, Icon, Loader, useApi } from '../app/ui';
+import { Badge, Empty, Icon, Loader, useApi, Thumb } from '../app/ui';
 import { fdate, fdt, initials, num } from '../app/util';
 import { PasswordForm } from './Account';
 
@@ -32,11 +32,11 @@ export function AppHome() {
         {(scan || search) && <div className="mcard"><b>Scan SKU QR / search design</b>
           <video ref={vid} playsInline muted style={{ display: 'none', marginTop: 8 }} id="qrvid" />
           <div className="mt" style={{ display: 'flex', gap: 8 }}><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search SKU / design no." /></div>
-          <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>}
+          <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>}
         <h3 style={{ fontSize: 14, margin: '6px 0 10px' }}>My assigned QC</h3>
         {!d.jobs.length && <div className="mcard"><Empty>No QC jobs assigned right now.</Empty></div>}
         {d.jobs.map((j) => { const ret = +j.ret, view = !ret && +j.done === +j.skus; return <div key={j.id} className="mcard">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b>{j.client_code} – {j.vendor_name.toUpperCase()}</b><Badge s={ret ? 'RETURNED' : j.status} /></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}><span className="mitem"><Thumb src={j.img} size={48} /><b>{j.client_code} – {j.vendor_name.toUpperCase()}</b></span><Badge s={ret ? 'RETURNED' : j.status} /></div>
           <p className="muted" style={{ margin: '6px 0 10px', fontSize: 12.5 }}>{fdate(j.scheduled_date)} · {j.time_slot} · {j.skus} SKU · {j.location}<br />PO {j.po_no} · {j.job_no} · {j.done}/{j.skus} submitted
             {+j.hold ? <b style={{ color: '#b4561b' }}> · {j.hold} on hold</b> : null}{ret ? <b style={{ color: 'var(--ruby)' }}> · {ret} returned</b> : null}</p>
           <button className={'bigbtn ' + (j.status === 'ASSIGNED' ? '' : ret ? 'ruby' : 'alt')} onClick={() => nav('/app/job/' + j.id)}>{j.status === 'ASSIGNED' ? 'START QC' : ret ? 'FIX & RESUBMIT' : view ? 'VIEW' : 'CONTINUE QC'}</button>
@@ -60,7 +60,7 @@ export function AppJob() {
       </div>
       <input type="search" placeholder="Search SKU…" value={s} onChange={(e) => setS(e.target.value)} style={{ marginBottom: 10 }} />
       <div className="mcard"><b>Product list</b><div className="mlist">{d.items.filter((i) => i.sku.toUpperCase().includes(s.toUpperCase())).map((i) =>
-        <Link key={i.id} to={'/app/inspect/' + i.id}><span><b className="mono">{i.sku}</b><small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small></span><Badge s={i.status} /></Link>)}</div></div>
+        <Link key={i.id} to={'/app/inspect/' + i.id}><span className="mitem"><Thumb src={i.img} size={52} alt={i.sku} /><span><b className="mono">{i.sku}</b><small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small></span></span><Badge s={i.status} /></Link>)}</div></div>
       {first ? <button className="bigbtn" onClick={() => nav('/app/inspect/' + first.id)}>{first.status === 'PENDING' ? 'START INSPECTION' : 'CONTINUE · ' + first.sku}</button>
         : <div className="qtyok" style={{ textAlign: 'center' }}>All SKUs submitted — waiting for QC manager review.</div>}
     </MPage>; }}</Loader>;
@@ -71,8 +71,8 @@ export function AppHistory() {
   return <MPage title="My QC history">
     <div className="tabs">{[['ALL', 'All'], ['SUBMITTED', 'Submitted'], ['RETURNED', 'Returned'], ['APPROVED', 'Approved']].map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setF(k); }}>{l}</a>)}</div>
     <Loader q={q}>{(d) => <div className="mcard"><div className="mlist">{!d.rows.length && <Empty>Nothing here yet.</Empty>}
-      {d.rows.map((r) => r.status === 'APPROVED' ? <a key={r.id} href={pdfUrl({ item: r.id })} target="_blank" rel="noreferrer"><span><b className="mono">{r.report_no}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.approved_at, 'd M')} · {r.sku}</small></span><Badge s={r.status} /></a>
-        : <Link key={r.id} to={'/app/inspect/' + r.id}><span><b className="mono">{r.sku}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.submitted_at, 'd M')} · {r.job_no}</small></span><Badge s={r.status} /></Link>)}</div></div>}</Loader>
+      {d.rows.map((r) => r.status === 'APPROVED' ? <a key={r.id} href={pdfUrl({ item: r.id })} target="_blank" rel="noreferrer"><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.report_no}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.approved_at, 'd M')} · {r.sku}</small></span></span><Badge s={r.status} /></a>
+        : <Link key={r.id} to={'/app/inspect/' + r.id}><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.sku}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.submitted_at, 'd M')} · {r.job_no}</small></span></span><Badge s={r.status} /></Link>)}</div></div>}</Loader>
   </MPage>;
 }
 

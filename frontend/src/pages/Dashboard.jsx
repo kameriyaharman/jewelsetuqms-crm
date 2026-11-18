@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
-import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi } from '../app/ui';
+import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi, Thumb } from '../app/ui';
 import { fdate, num, pct } from '../app/util';
 
 export default function Dashboard() {
@@ -24,7 +24,7 @@ export default function Dashboard() {
         <div className="card"><div className="card-h"><h2>Today's QC · {fdate(new Date(), 'd M')}</h2><Link to="/schedule">View schedule</Link></div>
           {!d.today.length ? <Empty>No QC scheduled for today.</Empty> :
             <div className="tbl-wrap"><table className="t"><thead><tr><th>Job</th><th>Vendor</th><th>Client</th><th>Inspector</th><th>SKUs</th><th>Status</th></tr></thead><tbody>
-              {d.today.map((j) => <tr key={j.id}><td><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></td><td>{j.vendor_name}</td><td>{j.client_code}</td>
+              {d.today.map((j) => <tr key={j.id}><td><div className="skucell"><Thumb src={j.img} size={36} /><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></div></td><td>{j.vendor_name}</td><td>{j.client_code}</td>
                 <td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : <span className="muted">—</span>}</td><td>{j.skus} SKU</td><td><Badge s={j.status} /></td></tr>)}
             </tbody></table></div>}
         </div>

@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdate, num } from '../app/util';
 
 const TABS = [['ALL', 'All'], ['REQUESTED', 'Requested'], ['DRAFT', 'Draft'], ['SCHEDULED', 'Scheduled'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['SUBMITTED', 'Submitted'], ['APPROVED', 'Approved'], ['EMAILED', 'Reported'], ['CLOSED', 'Closed']];
@@ -30,7 +30,7 @@ export default function Requests() {
           <button className="btn sm">Filter</button></form>
         {!d.rows.length ? <Empty>No QC requests match.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>Req / Job</th>{internal && <th>Source</th>}{r !== 'client' && <th>Client</th>}{r !== 'vendor' && <th>Vendor</th>}<th>PO</th><th>Scope</th><th className="num">SKUs / Qty</th><th>QC date</th><th>Status</th></tr></thead><tbody>
           {d.rows.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
-            <td><Link className="strong" to={'/request/' + j.id}>{j.req_no}</Link>{j.job_no && <><br /><small className="mono">{j.job_no}</small></>}</td>
+            <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.po_no} /><span><Link className="strong" to={'/request/' + j.id}>{j.req_no}</Link>{j.job_no && <><br /><small className="mono">{j.job_no}</small></>}</span></div></td>
             {internal && <td>{j.source}</td>}{r !== 'client' && <td>{j.client_code}</td>}{r !== 'vendor' && <td>{j.vendor_name}</td>}
             <td className="mono">{j.po_no}</td><td>{j.scope_label}</td><td className="num">{j.skus} / {num(j.qty)}</td>
             <td>{fdate(j.scheduled_date || j.requested_date, 'd M')}{!j.scheduled_date && j.requested_date ? <small> (req.)</small> : null}</td>

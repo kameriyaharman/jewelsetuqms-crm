@@ -5,7 +5,7 @@ api('GET', 'dashboard', R_INT, function () {
     $mStart = date('Y-m-01'); $pm = strtotime('-1 month', strtotime($mStart));
     $month = sum_items(approved_items(['from' => $mStart]));
     $prev = sum_items(approved_items(['from' => date('Y-m-01', $pm), 'to' => date('Y-m-t', $pm)]));
-    $today = all("SELECT j.id, j.job_no, j.req_no, j.status, j.time_slot, c.code client_code, v.name vendor_name, u.name insp_name, u.emp_code insp_code, (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id) skus
+    $today = all("SELECT " . img_job_sql() . " img, j.id, j.job_no, j.req_no, j.status, j.time_slot, c.code client_code, v.name vendor_name, u.name insp_name, u.emp_code insp_code, (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id) skus
         FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=j.inspector_id WHERE j.scheduled_date=? AND j.status<>'CANCELLED' ORDER BY j.time_slot", [today()]);
     $up = all("SELECT j.id, j.status, j.inspector_id, COALESCE(j.scheduled_date, j.requested_date) d, c.code client_code, v.name vendor_name FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
         WHERE (j.scheduled_date>? OR (j.scheduled_date IS NULL AND j.requested_date>=?)) AND j.status IN ('REQUESTED','SCHEDULED','ASSIGNED') ORDER BY COALESCE(j.scheduled_date,j.requested_date) LIMIT 6", [today(), today()]);
@@ -217,7 +217,7 @@ api('GET', 'vendor/dash', ['vendor'], function () {
         'jobs' => job_rows_with_result('j.vendor_id=? AND (j.status<>\'DRAFT\' OR j.created_by=?)', [$vid, user()['id']], 12), 'next' => $next, 'latest' => $latest];
 });
 function job_rows_with_result(string $where, array $p, int $limit): array {
-    $rows = all("SELECT j.*, c.code client_code, v.name vendor_name, (SELECT SUM(ready_qty) FROM qc_items i WHERE i.job_id=j.id) qty,
+    $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, (SELECT SUM(ready_qty) FROM qc_items i WHERE i.job_id=j.id) qty,
        (SELECT CASE WHEN SUM(CASE WHEN final_result='FAIL' THEN 1 ELSE 0 END)>0 THEN 'FAIL' WHEN SUM(CASE WHEN final_result='CONDITIONAL' THEN 1 ELSE 0 END)>0 THEN 'CONDITIONAL' ELSE 'PASS' END FROM qc_items i WHERE i.job_id=j.id) res
        FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id WHERE $where AND j.status NOT IN ('CANCELLED') ORDER BY j.id DESC LIMIT $limit", $p);
     foreach ($rows as &$r) $r['scope_label'] = scope_label($r);

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { get } from './api';
+import { fileUrl, get } from './api';
 import { JOB_STATUS, ITEM_STATUS, num } from './util';
 
 const P = {
@@ -25,6 +25,9 @@ const P = {
   home: <path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z" />,
   scan: <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10" />,
   menu: <path d="M3 6h18M3 12h18M3 18h18" />,
+  gem: <><path d="M6 3h12l3 6-9 12L3 9z" /><path d="M3 9h18M9 3l3 6 3-6M12 21 9 9M12 21l3-12" /></>,
+  cards: <><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></>,
+  rows: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
   box: <><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></>,
   x: <path d="M18 6 6 18M6 6l12 12" />,
   alert: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></>,
@@ -125,4 +128,16 @@ export function useAction() {
 export function Multi({ value = [], onChange, options, size = 5 }) {
   return <select multiple size={size} value={value.map(String)} onChange={(e) => onChange(Array.from(e.target.selectedOptions).map((o) => Number(o.value)))}>
     {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
+}
+
+/** Product picture thumbnail; click opens it large. `src` is an upload path from the API (img field). */
+export function Thumb({ src, size = 44, alt = '', style }) {
+  const [open, setOpen] = useState(false);
+  const box = { width: size, height: size, ...style };
+  if (!src) return <span className="thumb none" style={box} title="No product image"><Icon n="gem" size={Math.max(14, size * 0.42)} /></span>;
+  const u = fileUrl(src);
+  return <>
+    <img className="thumb" src={u} alt={alt} loading="lazy" style={box} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }} />
+    {open && <div className="lightbox" onClick={() => setOpen(false)}><img src={u} alt={alt} /><span>{alt}</span></div>}
+  </>;
 }

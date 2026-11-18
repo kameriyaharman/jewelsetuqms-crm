@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl, post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Result, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Result, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdt } from '../app/util';
 
 export default function ReportView() {
@@ -17,7 +17,7 @@ export default function ReportView() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}><div className="card-h" style={{ padding: '14px 18px 0' }}><h2>Report preview · {it.report_no}</h2><a target="_blank" rel="noreferrer" href={pdfUrl({ item: it.id })}>Open full screen</a></div>
           <iframe title="report" src={pdfUrl({ item: it.id }) + '#view=FitH'} style={{ width: '100%', height: '78vh', border: 0, background: '#eee' }} /></div>
         <div>
-          <div className="card"><h2 className="mb">Report generated successfully</h2>
+          <div className="card"><div className="skucell mb"><Thumb src={it.img} size={72} alt={it.sku} /><h2>Report generated successfully</h2></div>
             <p className="muted" style={{ marginTop: -6 }}>approved {fdt(it.approved_at)}</p>
             <div className="actions mb"><Badge s="APPROVED" /><Badge s="PDF GENERATED" /><Result r={it.final_result} /><span className="right">🔒 Locked · Rev {String(it.rev).padStart(2, '0')}</span></div>
             <div className="actions"><a className="btn" target="_blank" rel="noreferrer" href={pdfUrl({ item: it.id })}>View PDF</a><a className="btn" href={pdfUrl({ item: it.id, dl: 1 })}>Download</a>

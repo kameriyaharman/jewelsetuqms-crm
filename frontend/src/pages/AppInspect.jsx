@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MPage } from '../app/Layout';
 import { flushQueue, get, inspectSend } from '../app/api';
-import { Badge, Icon, Modal, Spinner, useToast } from '../app/ui';
+import { Badge, Icon, Modal, Spinner, useToast, Thumb } from '../app/ui';
 import { compressImage, fdt, ITEM_STATUS, num, today } from '../app/util';
 
 const mres = (m) => { if (m.actual === '' || m.actual == null || m.spec === '' || m.spec == null) return ''; return Math.abs(parseFloat(m.actual) - parseFloat(m.spec)) <= Math.abs(parseFloat(m.tol) || 0) + 1e-9 ? 'PASS' : 'FAIL'; };
@@ -107,10 +107,15 @@ export default function AppInspect() {
     {it.status === 'RETURNED' && <div className="note ruby" style={{ marginBottom: 10 }}><b>Returned for correction</b> — {it.return_reason}<br />Sections: {it.return_sections}</div>}
     {!ed && it.status !== 'HOLD' && <div className="qtyok" style={{ marginBottom: 10 }}>Status: {ITEM_STATUS[it.status] || it.status} — read only.</div>}
 
+    {(it.img || it.instructions) && <div className="mcard" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+      <Thumb src={it.img} size={110} alt={it.sku} />
+      <div style={{ flex: 1, minWidth: 0 }}><b className="mono">{it.sku}</b><br /><small className="muted">{it.product} · {it.metal}{it.plating ? ' · ' + it.plating : ''}</small>
+        {it.instructions && <div className="note gold" style={{ margin: '8px 0 0', fontSize: 12.5 }}><b>Client instructions:</b><p className="spec-pre">{it.instructions}</p></div>}</div></div>}
     <details className="mcard" open={!S.started}><summary style={{ fontWeight: 650, cursor: 'pointer' }}>Product information</summary>
       <div className="mgrid2 mt">{[['SKU / design no', it.sku], ['Product', it.product], ['PO number', job.po_no], ['Order qty', num(it.order_qty) + ' pcs'], ['Ready for QC', num(it.ready_qty) + ' pcs'], ['Metal', it.metal],
         ['Plating', it.plating], ['Length', it.length], ['Lock', it.lock_type], ['Stamping', it.stamping], ['Client style / ref', it.style_ref || '—'], ['Stone / setting', it.stone_setting || '—'],
         ['QC scope', `${job.scope_label} (${num(it.insp_qty)})`], ['Target weight', it.target_weight]].map(([l, v]) => <div key={l}><small>{l}</small><b>{v}</b></div>)}</div>
+      {it.spec_detail && <p className="spec-pre mt">{it.spec_detail}</p>}
       {plan && plan.letter && <p className="muted" style={{ fontSize: 12 }}>AQL {plan.level} · code {plan.letter} · sample {plan.sample}{['critical', 'major', 'minor'].filter((k) => plan[k]?.aql).map((k) => ` · ${k} Ac ${plan[k].ac}/Re ${plan[k].re}`).join('')}</p>}
       {!!D.attachments.length && <div className="mt">{D.attachments.map((a) => <a key={a.id} className="pill" target="_blank" rel="noreferrer" href={a.url}>📎 {a.name}</a>)}</div>}
       {job.special_req && <div className="note mt" style={{ fontSize: 12 }}><b>Special requirements:</b> {job.special_req}</div>}
@@ -199,7 +204,7 @@ export default function AppInspect() {
           <button className="bigbtn gold" disabled={busy} onClick={submit}>SUBMIT FOR REVIEW</button></div>}
     </>}
 
-    <div className="mcard mt"><small className="muted">Other SKUs in this job</small><div className="mlist">{D.siblings.filter((s) => s.id !== it.id).map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><b className="mono">{s.sku}</b><Badge s={s.status} /></Link>)}</div></div>
+    <div className="mcard mt"><small className="muted">Other SKUs in this job</small><div className="mlist">{D.siblings.filter((s) => s.id !== it.id).map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><b className="mono">{s.sku}</b></span><Badge s={s.status} /></Link>)}</div></div>
 
     <Modal open={hold} title="Hold SKU for approval" onClose={() => setHold(false)}>
       <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>Use when you need a decision before continuing (e.g. shade difference, design deviation). The SKU pauses; other SKUs continue.</p>

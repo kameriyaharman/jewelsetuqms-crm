@@ -18,7 +18,7 @@ export default function Login() {
       <div>
         <div className="lg"><img src={import.meta.env.BASE_URL + 'img/logo.png'} alt="Jewelsetu Quality Services" /></div>
         <h2>QC Inspection &amp;<br />Reporting System<br /><em>From Inspection to Insight</em></h2>
-        <p style={{ color: '#c9b0a4', maxWidth: 460 }}>One platform for JEWELSETU, brands and factories — QC requests, on-site inspection, locked PDF reports and vendor quality analytics.</p>
+        <p style={{ color: '#b9d0d3', maxWidth: 460 }}>One platform for JEWELSETU, brands and factories — QC requests, on-site inspection, locked PDF reports and vendor quality analytics.</p>
       </div>
       <div className="feats"><div>Excel → QC jobs in minutes</div><div>On-site inspection with photos</div><div>Auto PDF report &amp; email</div><div>Vendor quality analytics</div></div>
     </div>

@@ -4,13 +4,13 @@ function my_job(array $job): bool { $me = user(); return (int)$job['inspector_id
 
 api('GET', 'app/home', ['inspector'], function () {
     $me = user();
-    $jobs = all("SELECT j.id, j.job_no, j.po_no, j.status, j.scheduled_date, j.time_slot, j.location, c.code client_code, v.name vendor_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus,
+    $jobs = all("SELECT " . img_job_sql() . " img, j.id, j.job_no, j.po_no, j.status, j.scheduled_date, j.time_slot, j.location, c.code client_code, v.name vendor_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus,
        (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')) done,
        (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status='RETURNED') ret, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status='HOLD') hold
        FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
        WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')
        ORDER BY CASE WHEN j.status='RETURNED' THEN 0 WHEN j.status='IN_PROGRESS' THEN 1 ELSE 2 END, j.scheduled_date", [$me['id'], $me['id']]);
-    $skus = all("SELECT i.id, i.sku, i.product, i.ready_qty, i.status, j.job_no FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')", [$me['id'], $me['id']]);
+    $skus = all("SELECT " . img_item_sql() . " img, i.id, i.sku, i.product, i.ready_qty, i.status, j.job_no FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')", [$me['id'], $me['id']]);
     return ['jobs' => $jobs, 'skus' => $skus, 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('PENDING','IN_PROGRESS','HOLD','RETURNED','COMPLETED') AND j.status NOT IN ('CANCELLED','CLOSED')", [$me['id'], $me['id']]),
         'completed' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')", [$me['id'], $me['id']])];
@@ -18,7 +18,7 @@ api('GET', 'app/home', ['inspector'], function () {
 api('GET', 'app/job', ['inspector'], function () {
     $job = job_load((int)in_('id')); if (!$job || !my_job($job)) fail('Job not found', 404);
     $job['scope_label'] = scope_label($job);
-    return ['job' => $job, 'items' => all('SELECT id, sku, product, ready_qty, insp_qty, order_qty, status FROM qc_items WHERE job_id=? ORDER BY id', [$job['id']]),
+    return ['job' => $job, 'items' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.instructions FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']]),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=?', [$job['id']]))];
 });
 api('GET', 'app/inspect', ['inspector'], function () {
@@ -37,6 +37,7 @@ api('GET', 'app/inspect', ['inspector'], function () {
             ['param' => 'Width', 'spec' => $n($it['width']), 'tol' => '0.2', 'unit' => 'mm', 'qty' => 2, 'actual' => '', 'result' => ''],
             ['param' => 'Thickness', 'spec' => $n($it['thickness']), 'tol' => '0.1', 'unit' => 'mm', 'qty' => 2, 'actual' => '', 'result' => '']]; }
     $dm = []; foreach (all('SELECT d.name, d.severity, c.name cat FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name') as $d) $dm[$d['cat']][] = ['n' => $d['name'], 's' => $d['severity']];
+    $it['img'] = item_img((int)$it['id']);
     return ['item' => $it, 'job' => $job, 'editable' => $editable, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'remarks' => $remarks,
         'defects' => all('SELECT category, type, severity, qty, remark FROM item_defects WHERE item_id=?', [$it['id']]),
         'photos' => array_map(fn($p) => ['id' => (int)$p['id'], 'kind' => $p['kind'], 'remark' => $p['remark'], 'url' => url('file', ['p' => $p['path']])], all('SELECT * FROM item_photos WHERE item_id=? ORDER BY id', [$it['id']])),
@@ -44,11 +45,11 @@ api('GET', 'app/inspect', ['inspector'], function () {
         'aql' => $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL', 'locked_qty' => $job['scope'] !== 'SAMPLE',
         'need_photo' => flag('require_defect_photo'), 'gps' => flag('gps_on_inspection_start'),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=? AND (item_id IS NULL OR item_id=?)', [$job['id'], $it['id']])),
-        'siblings' => all('SELECT id, sku, status FROM qc_items WHERE job_id=? ORDER BY id', [$job['id']])];
+        'siblings' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.status FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']])];
 });
 api('GET', 'app/history', ['inspector'], function () {
     $me = user(); $f = (string)in_('f', 'ALL'); $map = ['SUBMITTED' => ['SUBMITTED', 'UNDER_REVIEW'], 'RETURNED' => ['RETURNED'], 'APPROVED' => ['APPROVED']];
-    $sql = "SELECT i.id, i.sku, i.status, i.report_no, i.approved_at, i.submitted_at, j.job_no, v.name vendor_name, c.code client_code FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN vendors v ON v.id=j.vendor_id JOIN clients c ON c.id=j.client_id
+    $sql = "SELECT " . img_item_sql() . " img, i.id, i.sku, i.status, i.report_no, i.approved_at, i.submitted_at, j.job_no, v.name vendor_name, c.code client_code FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN vendors v ON v.id=j.vendor_id JOIN clients c ON c.id=j.client_id
         WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','RETURNED','APPROVED')";
     if (isset($map[$f])) $sql .= " AND i.status IN ('" . implode("','", $map[$f]) . "')";
     return ['rows' => all($sql . ' ORDER BY COALESCE(i.approved_at, i.submitted_at) DESC LIMIT 100', [$me['id'], $me['id']])];

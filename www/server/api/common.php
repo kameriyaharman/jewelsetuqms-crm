@@ -86,7 +86,8 @@ api('GET', 'file', R_ALL, function () {
     $job = one('SELECT j.* FROM attachments a JOIN qc_jobs j ON j.id=a.job_id WHERE a.path=?', [$p])
         ?? one('SELECT j.* FROM item_photos ph JOIN qc_items i ON i.id=ph.item_id JOIN qc_jobs j ON j.id=i.job_id WHERE ph.path=?', [$p]);
     if ($job && !can_see_job($job)) fail('Forbidden', 403);
-    if (!$job && !is_internal()) fail('Forbidden', 403);
+    $mine = str_starts_with($p, 'imports/img/') && in_array($p, array_column($_SESSION['import']['rows'] ?? [], 'img'), true);
+    if (!$job && !is_internal() && !$mine) fail('Forbidden', 403);
     $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp',
         'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'csv' => 'text/csv'][strtolower(pathinfo($full, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
     header('Content-Type: ' . $mime); header('Cache-Control: private, max-age=86400');

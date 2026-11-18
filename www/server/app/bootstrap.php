@@ -319,3 +319,15 @@ function user_opts(string $role): array {
         $o[$u['id']] = ($u['emp_code'] ? $u['emp_code'] . ' · ' : '') . $u['name'];
     return $o;
 }
+
+/* ---------------- product images ---------------- */
+/** SQL expression: path of an item's product picture (product photo, else an image attached to the SKU). */
+function img_item_sql(string $a = 'i'): string {
+    return "COALESCE((SELECT ph.path FROM item_photos ph WHERE ph.item_id=$a.id AND ph.kind='product' ORDER BY ph.id LIMIT 1),"
+        . "(SELECT ax.path FROM attachments ax WHERE ax.item_id=$a.id AND (LOWER(ax.path) LIKE '%.jpg' OR LOWER(ax.path) LIKE '%.jpeg' OR LOWER(ax.path) LIKE '%.png' OR LOWER(ax.path) LIKE '%.webp') ORDER BY ax.id LIMIT 1))";
+}
+/** SQL expression: first product picture of a job (for job lists / cards). */
+function img_job_sql(string $a = 'j'): string {
+    return "(SELECT ph.path FROM item_photos ph JOIN qc_items ii ON ii.id=ph.item_id WHERE ii.job_id=$a.id AND ph.kind='product' ORDER BY ii.id, ph.id LIMIT 1)";
+}
+function item_img(int $id): ?string { return val('SELECT ' . img_item_sql('i') . ' FROM qc_items i WHERE i.id=?', [$id]) ?: null; }
