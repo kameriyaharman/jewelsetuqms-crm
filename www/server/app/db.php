@@ -37,7 +37,7 @@ function db_install(): void {
     $tables = [
         'settings' => "k VARCHAR(100) PRIMARY KEY, v TEXT",
         'clients' => "id $pk, code VARCHAR(20) NOT NULL UNIQUE, name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
-            address TEXT, report_format VARCHAR(100), aql_default VARCHAR(20) DEFAULT '2.5', major_limit DECIMAL(6,2) DEFAULT 2.5, fail_threshold DECIMAL(6,2) DEFAULT 80, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
+            address TEXT, report_format VARCHAR(100), aql_default VARCHAR(20) DEFAULT '2.5', major_limit DECIMAL(6,2) DEFAULT 2.5, fail_threshold DECIMAL(6,2) DEFAULT 80, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT, qc_manager_id INT NULL",
         'vendors' => "id $pk, code VARCHAR(30) NOT NULL UNIQUE, short_code VARCHAR(20), name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
             address TEXT, location $T, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
         'client_vendor' => "client_id INT NOT NULL, vendor_id INT NOT NULL, PRIMARY KEY (client_id, vendor_id)",
@@ -60,7 +60,7 @@ function db_install(): void {
             created_by INT NULL, created_at $DT, scheduled_at $DT NULL, assigned_at $DT NULL, started_at $DT NULL,
             submitted_at $DT NULL, approved_at $DT NULL, emailed_at $DT NULL, closed_at $DT NULL, po_pdf $T NULL",
         'qc_items' => "id $pk, job_id INT NOT NULL, sku VARCHAR(80) NOT NULL, product $T, metal $T, plating $T, target_weight $T,
-            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, spec_detail TEXT NULL, instructions TEXT NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
+            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, spec_detail TEXT NULL, instructions TEXT NULL, spec_check VARCHAR(10) NULL, spec_remark TEXT NULL, factory_rep $T NULL, insp_type VARCHAR(30) NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
             insp_qty INT DEFAULT 0, plan_json TEXT, status VARCHAR(20) DEFAULT 'PENDING', step INT DEFAULT 0,
             inspected_qty INT DEFAULT 0, accepted_qty INT DEFAULT 0, rejected_qty INT DEFAULT 0, reinspection INT DEFAULT 0,
             gps $T NULL, insp_date $D NULL, checks_json $TXT, meas_json $TXT, tests_json $TXT,
@@ -90,7 +90,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 3) return;
+    if ($ver >= 4) return;
+    if ($ver === 3) { db_migrate_v4(); return; }
     if ($ver === 2) { db_migrate_v3(); return; }
     $T = 'VARCHAR(255)';
     $cols = ['clients' => ['fail_threshold' => 'DECIMAL(6,2) DEFAULT 80'], 'vendors' => ['short_code' => 'VARCHAR(20)'], 'users' => ['designation' => "$T NULL"],
@@ -111,6 +112,17 @@ function db_migrate_v3(): void {
         try { db()->query("SELECT $c FROM qc_items LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE qc_items ADD COLUMN $c $def"); }
     }
     set_setting('schema_version', '3');
+    db_migrate_v4();
+}
+/** v4: optional QC-manager mapping per client, sample-report fields, new feature flags. */
+function db_migrate_v4(): void {
+    $add = ['clients' => ['qc_manager_id' => 'INT NULL'],
+        'qc_items' => ['spec_check' => 'VARCHAR(10) NULL', 'spec_remark' => 'TEXT NULL', 'factory_rep' => 'VARCHAR(255) NULL', 'insp_type' => 'VARCHAR(30) NULL']];
+    foreach ($add as $t => $cs) foreach ($cs as $c => $def) {
+        try { db()->query("SELECT $c FROM $t LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE $t ADD COLUMN $c $def"); }
+    }
+    foreach (['qc_manager_role' => '0', 'inspector_new_job' => '1', 'inspector_edit_after_submit' => '1'] as $k => $v) if (setting($k, '') === '') set_setting($k, $v);
+    set_setting('schema_version', '4');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

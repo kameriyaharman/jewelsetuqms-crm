@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { MPage } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { flushQueue, pdfUrl, queue } from '../app/api';
@@ -8,19 +8,9 @@ import { fdate, fdt, initials, num } from '../app/util';
 import { PasswordForm } from './Account';
 
 export function AppHome() {
-  const { me } = useAuth(); const q = useApi('app/home'); const { online, qn } = useOutletContext(); const [sp] = useSearchParams(); const nav = useNavigate();
-  const [search, setSearch] = useState(''); const [syncMsg, setSyncMsg] = useState('synced'); const vid = useRef();
+  const { me } = useAuth(); const q = useApi('app/home'); const { online, qn } = useOutletContext(); const nav = useNavigate();
+  const [search, setSearch] = useState(''); const [syncMsg, setSyncMsg] = useState('synced');
   const h = new Date().getHours(); const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  const scan = sp.has('scan');
-  useEffect(() => {
-    if (!scan || !('BarcodeDetector' in window)) return; let stream; let stop = false;
-    (async () => { try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); const v = vid.current; v.srcObject = stream; v.style.display = 'block'; await v.play();
-      const bd = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13'] });
-      const tick = async () => { if (stop) return; try { const c = await bd.detect(v); if (c.length) { setSearch(c[0].rawValue); stream.getTracks().forEach((t) => t.stop()); v.style.display = 'none'; return; } } catch { /* ignore */ } requestAnimationFrame(tick); }; tick();
-    } catch { /* camera denied */ } })();
-    return () => { stop = true; stream?.getTracks().forEach((t) => t.stop()); };
-  }, [scan]);
   return <MPage title="Q-TRACK" right={<Link to="/app/alerts" style={{ color: '#fff' }}><Icon n="bell" /></Link>}>
     <div className="offbar">You are offline — everything you enter is saved on this phone and will sync automatically.</div>
     <Loader q={q}>{(d) => { const res = search ? d.skus.filter((s) => s.sku.toUpperCase().includes(search.toUpperCase())) : [];
@@ -29,10 +19,10 @@ export function AppHome() {
         <div className="mstats"><div><b>{String(d.today).padStart(2, '0')}</b><small>Today's QC</small></div><div><b>{String(d.pending).padStart(2, '0')}</b><small>Pending SKUs</small></div><div><b>{d.completed}</b><small>Completed</small></div></div>
         <p className="muted" style={{ fontSize: 12, margin: '-4px 0 12px' }}><span style={{ color: online ? 'var(--ok)' : 'var(--warn)' }}>●</span> {online ? 'ONLINE' : 'OFFLINE'} · {syncMsg}
           {qn > 0 && <> · <b>{qn}</b> pending upload <a href="#" onClick={async (e) => { e.preventDefault(); const n = await flushQueue(); setSyncMsg(n ? `synced ${n} change(s) ✓` : 'synced'); q.reload(); }}>sync now</a></>}</p>
-        {(scan || search) && <div className="mcard"><b>Scan SKU QR / search design</b>
-          <video ref={vid} playsInline muted style={{ display: 'none', marginTop: 8 }} id="qrvid" />
+        {d.can_new && <Link to="/app/new" className="bigbtn alt" style={{ display: 'flex', marginBottom: 12, textDecoration: 'none' }}><Icon n="plus" /> NEW QC JOB ON SITE</Link>}
+        <div className="mcard"><b>Search design / SKU</b>
           <div className="mt" style={{ display: 'flex', gap: 8 }}><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search SKU / design no." /></div>
-          <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>}
+          <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>
         <h3 style={{ fontSize: 14, margin: '6px 0 10px' }}>My assigned QC</h3>
         {!d.jobs.length && <div className="mcard"><Empty>No QC jobs assigned right now.</Empty></div>}
         {d.jobs.map((j) => { const ret = +j.ret, view = !ret && +j.done === +j.skus; return <div key={j.id} className="mcard">
@@ -61,8 +51,9 @@ export function AppJob() {
       <input type="search" placeholder="Search SKU…" value={s} onChange={(e) => setS(e.target.value)} style={{ marginBottom: 10 }} />
       <div className="mcard"><b>Product list</b><div className="mlist">{d.items.filter((i) => i.sku.toUpperCase().includes(s.toUpperCase())).map((i) =>
         <Link key={i.id} to={'/app/inspect/' + i.id}><span className="mitem"><Thumb src={i.img} size={52} alt={i.sku} /><span><b className="mono">{i.sku}</b><small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small></span></span><Badge s={i.status} /></Link>)}</div></div>
+      {d.can_add && <Link to={'/app/job/' + j.id + '/add'} className="bigbtn alt" style={{ display: 'flex', textDecoration: 'none', marginBottom: 8 }}><Icon n="plus" /> ADD SKU ON SITE</Link>}
       {first ? <button className="bigbtn" onClick={() => nav('/app/inspect/' + first.id)}>{first.status === 'PENDING' ? 'START INSPECTION' : 'CONTINUE · ' + first.sku}</button>
-        : <div className="qtyok" style={{ textAlign: 'center' }}>All SKUs submitted — waiting for QC manager review.</div>}
+        : <div className="qtyok" style={{ textAlign: 'center' }}>All SKUs submitted — waiting for review. You can still open a SKU to correct it until it is approved.</div>}
     </MPage>; }}</Loader>;
 }
 

@@ -43,7 +43,7 @@ export default function RequestView() {
                 <td><Badge s={i.status} />{i.hold_status === 'PENDING' && <><br /><small>waiting {i.hold_for}</small></>}</td>
                 <td>{i.final_result ? <Result r={i.final_result} /> : i.system_result ? <small>sys: {i.system_result}</small> : '—'}</td>
                 <td>{pub ? <Link className="btn sm" to={'/report/' + i.id}>Report</Link> : c.review && ['SUBMITTED', 'UNDER_REVIEW'].includes(i.status) ? <Link className="btn sm pri" to={'/review/' + i.id}>Review</Link>
-                  : i.hold_status === 'PENDING' && r === i.hold_for ? <Link className="btn sm pri" to="/approvals">Respond</Link> : null}</td></tr>
+                  : i.hold_status === 'PENDING' && r === i.hold_for ? <Link className="btn sm pri" to="/approvals">Respond</Link> : null}{me.user.role === 'super_admin' && i.status !== 'PENDING' && <> <Link className="btn sm" title="Super Admin: edit any point" to={'/edit/' + i.id}>✎</Link></>}</td></tr>
                 {(i.spec_detail || i.instructions) && <tr className="sub"><td></td><td colSpan={10}><details className="specbox"><summary>Stones, size &amp; client instructions{i.instructions ? ' ⚠' : ''}</summary>
                   <div className="specgrid">{i.instructions && <div className="note gold" style={{ margin: 0 }}><b>Client instructions:</b><p className="spec-pre">{i.instructions}</p></div>}
                   <div>{(i.length || i.lock_type) && <p className="spec-pre"><b>Size / lock:</b> {[i.length, i.lock_type].filter(Boolean).join(' · ')}</p>}{i.spec_detail && <p className="spec-pre">{i.spec_detail}</p>}</div></div></details></td></tr>}

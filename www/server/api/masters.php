@@ -96,7 +96,8 @@ api('POST', 'vendors/save', ['super_admin', 'back_office'], function () {
 /* ----- mapping ----- */
 api('GET', 'mapping', ['super_admin'], function () {
     $demo = one("SELECT j.*, c.code cc, v.name vn FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id WHERE j.status='REQUESTED' ORDER BY j.id DESC LIMIT 1");
-    return ['clients' => all('SELECT id, code, name, status FROM clients ORDER BY status, code'), 'vendors' => all('SELECT id, name FROM vendors ORDER BY name'),
+    return ['clients' => all('SELECT id, code, name, status, qc_manager_id FROM clients ORDER BY status, code'), 'vendors' => all('SELECT id, name FROM vendors ORDER BY name'),
+        'mgr_on' => mgr_on(), 'managers' => all("SELECT id, name, emp_code, designation FROM users WHERE role='qc_manager' AND status='ACTIVE' ORDER BY name"),
         'map' => array_map(fn($m) => $m['client_id'] . '_' . $m['vendor_id'], all('SELECT * FROM client_vendor')),
         'logins' => all("SELECT u.id, u.email, u.emp_code, u.role, u.status, u.last_login, c.code ccode, v.name vname FROM users u LEFT JOIN clients c ON c.id=u.client_id LEFT JOIN vendors v ON v.id=u.vendor_id WHERE u.role IN ('client','vendor') ORDER BY u.role, u.name"),
         'demo' => $demo ? ['req_no' => $demo['req_no'], 'status' => $demo['status'], 'client' => $demo['cc'], 'vendor' => $demo['vn'],
@@ -105,8 +106,10 @@ api('GET', 'mapping', ['super_admin'], function () {
 api('POST', 'mapping/save', ['super_admin'], function () {
     q('DELETE FROM client_vendor');
     foreach ((array)in_('pairs', []) as $k) { [$c, $v] = array_map('intval', explode('_', (string)$k)); if ($c && $v) insert('client_vendor', ['client_id' => $c, 'vendor_id' => $v]); }
+    if (in_('mgr_on') !== null) { $on = in_('mgr_on') ? '1' : '0'; if ($on !== setting('qc_manager_role', '0')) audit('settings', 0, 'QC_MANAGER_ROLE', 'qc_manager_role', setting('qc_manager_role', '0'), $on); set_setting('qc_manager_role', $on); }
+    foreach ((array)in_('managers', []) as $cid => $uid) q('UPDATE clients SET qc_manager_id=? WHERE id=?', [(int)$uid ?: null, (int)$cid]);
     audit('mapping', 0, 'UPDATE');
-    return ['ok' => true, 'message' => 'Client–vendor mapping saved.'];
+    return ['ok' => true, 'message' => 'Mapping saved.'];
 });
 
 /* ----- team ----- */
@@ -144,7 +147,9 @@ api('POST', 'team/save', ['super_admin'], function () {
 const TOGGLES = ['enable_vendor_qc_request' => 'Vendors can raise QC requests from their portal', 'enable_client_qc_request' => 'Clients can raise QC requests from their portal',
     'require_defect_photo' => 'At least 1 defect photo when defect qty > 0', 'gps_on_inspection_start' => 'Log GPS + timestamp when inspection starts',
     'allow_job_split' => 'Split a large job across two inspectors', 'block_qty_mismatch' => 'Block save if Accepted + Rejected ≠ Inspected',
-    'auto_email_on_approve' => 'Auto-email PO report to vendor, client HO & JEWELSETU when all SKUs are approved'];
+    'auto_email_on_approve' => 'Auto-email PO report to vendor, client HO & JEWELSETU when all SKUs are approved',
+    'qc_manager_role' => 'QC Manager / HOD role active (off = Super Admin reviews, approves and gets manager alerts)',
+    'inspector_new_job' => 'Inspectors can create a new QC job / add SKUs on site', 'inspector_edit_after_submit' => 'Inspector can edit a report after submit (until approved)'];
 api('GET', 'settings', R_INT, function () {
     $t = []; foreach (TOGGLES as $k => $d) $t[] = ['key' => $k, 'label' => $d, 'on' => flag($k)];
     $cats = all('SELECT * FROM defect_categories ORDER BY sort, name');

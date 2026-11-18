@@ -144,7 +144,8 @@ function item_pdf(int $itemId, bool $save = false): array {
     $qtyOk = $aql ? (system_result($job, $it, $S['def']) === 'PASS') : $rate < $thr;
     $qtyRem = $aql ? implode(' · ', array_map(fn($k) => ucfirst($k) . ' ' . $S['sev'][strtoupper($k)] . ' / Re ' . ($plan[$k]['re'] ?? '-'), array_filter(['critical', 'major', 'minor'], fn($k) => !empty($plan[$k]['aql']))))
         : ($qtyOk ? 'PASSED: ' : 'FAILED: ') . number_format($rate, 1) . '% Rejected/Repair (' . ($qtyOk ? '<' : '>=') . $thrT . '% limit)';
-    $specOk = $res !== 'FAIL';
+    $specOk = !empty($it['spec_check']) ? $it['spec_check'] !== 'NOT OK' : $res !== 'FAIL';
+    $specRem = trim((string)($it['spec_remark'] ?? '')) ?: 'Verified against PO & Client Spec Sheet';
     $metal = trim($it['metal'] . ($it['plating'] && $it['plating'] !== '—' ? ' + ' . $it['plating'] : ''));
     $img = product_image($it);
     $ph = array_map(fn($p) => $p + ['sku' => $it['sku']], all('SELECT * FROM item_photos WHERE item_id=? ORDER BY id', [$it['id']]));
@@ -157,7 +158,7 @@ function item_pdf(int $itemId, bool $save = false): array {
 <?= !$it['locked'] ? '<div class="wm">DRAFT</div>' : '' ?>
 <div><?= bar('1. GENERAL INFORMATION & PRODUCT IMAGE') ?>
 <table>
- <tr><td class="lab">Inspection Date</td><td class="val"><?= fdate($it['insp_date'] ?: $job['scheduled_date'], 'd-M-Y') ?></td><td class="lab">Inspection Type</td><td class="val"><?= $it['reinspection'] ? 'RE-INSPECTION' : 'REGULAR' ?></td>
+ <tr><td class="lab">Inspection Date</td><td class="val"><?= fdate($it['insp_date'] ?: $job['scheduled_date'], 'd-M-Y') ?></td><td class="lab">Inspection Type</td><td class="val"><?= h($it['insp_type'] ?: ($it['reinspection'] ? 'RE-INSPECTION' : 'REGULAR')) ?></td>
    <td rowspan="11" style="width:24%;text-align:center;vertical-align:top;padding:0"><div style="background:#e8eef5;font-weight:bold;padding:4px">ACTUAL PRODUCT IMAGE</div>
    <?= $img ? '<img src="' . h($img) . '" style="width:150px;max-height:150px;margin-top:6px">' : '<div class="empty" style="padding-top:50px;padding-bottom:50px">No product image</div>' ?>
    <div class="val" style="padding:4px"><?= h($it['sku']) ?></div></td></tr>
@@ -182,7 +183,7 @@ function item_pdf(int $itemId, bool $save = false): array {
  <tr><td>On-Site Physical &amp; Lab Tests</td><td class="c <?= $S['tf'] ? 'nok' : 'ok' ?>"><?= $S['tf'] ? 'NOT OK' : 'OK' ?></td><td><?= $S['tf'] ? $S['tf'] . ' Test observation(s) noted - see Section 4' : 'All on-site tests satisfactory' ?></td></tr>
  <tr><td>Data Measurement (Weight &amp; Size)</td><td class="c <?= $S['mf'] ? 'nok' : 'ok' ?>"><?= $S['mf'] ? 'NOT OK' : 'OK' ?></td><td><?= $S['mf'] ? $S['mf'] . ' parameter(s) out of tolerance - see Section 5' : 'Dimensions &amp; weight within tolerance' ?></td></tr>
  <tr><td><?= count($S['checks']) ?>-Point Critical Quality Checkpoints</td><td class="c <?= $S['cf'] ? 'nok' : 'ok' ?>"><?= $S['cf'] ? 'NOT OK' : 'OK' ?></td><td><?= $S['cf'] ?> Failed, <?= $S['cp'] ?> Passed, <?= $S['cn'] ?> N/A</td></tr>
- <tr><td>Client Technical Specifications</td><td class="c <?= $specOk ? 'ok' : 'nok' ?>"><?= $specOk ? 'OK' : 'NOT OK' ?></td><td>Verified against PO &amp; Client Spec Sheet</td></tr>
+ <tr><td>Client Technical Specifications</td><td class="c <?= $specOk ? 'ok' : 'nok' ?>"><?= $specOk ? 'OK' : 'NOT OK' ?></td><td><?= h($specRem) ?></td></tr>
 </table></div>
 
 <div class="sec"><?= bar($aql ? '3. QUANTITY INSPECTION & AQL STATUS' : "3. QUANTITY INSPECTION & {$thrT}% THRESHOLD STATUS") ?>
@@ -240,7 +241,7 @@ function item_pdf(int $itemId, bool $save = false): array {
 <?= factory_eval([$it['factory_coop'], $it['factory_line'], $it['factory_ready']]) ?>
 <table><tr><td style="width:33%;height:34px;vertical-align:top"><b>Inspected By (JEWELSETU QC):</b> <?= h($job['inspector_code'] . ' · ' . $job['inspector_name']) ?><br><span class="na"><?= fdt($it['submitted_at']) ?></span></td>
 <td style="width:34%;vertical-align:top"><b>Reviewed By:</b> <?= h(approver($it['approved_by'] ? (int)$it['approved_by'] : null)) ?><br><span class="na"><?= fdt($it['approved_at']) ?></span></td>
-<td style="vertical-align:top"><b>Factory Representative Sign &amp; Stamp:</b></td></tr></table></div>
+<td style="vertical-align:top"><b>Factory Representative Sign &amp; Stamp:</b><?= !empty($it['factory_rep']) ? '<br>' . h($it['factory_rep']) : '' ?></td></tr></table></div>
 <?= terms_block() ?>
 </body></html>
 <?php

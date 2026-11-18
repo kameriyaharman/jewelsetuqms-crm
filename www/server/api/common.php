@@ -8,7 +8,7 @@ function me_payload(): array {
         'client' => val('SELECT name FROM clients WHERE id=?', [$u['client_id']]),
         'vendor' => val('SELECT name FROM vendors WHERE id=?', [$u['vendor_id']]),
         default => 'JEWELSETU HQ' };
-    $flags = []; foreach (['enable_vendor_qc_request', 'enable_client_qc_request', 'require_defect_photo', 'gps_on_inspection_start', 'allow_job_split', 'block_qty_mismatch'] as $k) $flags[$k] = flag($k);
+    $flags = []; foreach (['enable_vendor_qc_request', 'enable_client_qc_request', 'require_defect_photo', 'gps_on_inspection_start', 'allow_job_split', 'block_qty_mismatch', 'qc_manager_role', 'inspector_new_job', 'inspector_edit_after_submit'] as $k) $flags[$k] = flag($k);
     return ['auth' => true, 'csrf' => csrf_token(), 'demo' => $GLOBALS['CFG']['seed_demo'], 'flags' => $flags, 'counts' => nav_counts(),
         'user' => ['id' => (int)$u['id'], 'name' => $u['name'], 'role' => $u['role'], 'role_label' => ROLES[$u['role']], 'emp_code' => $u['emp_code'], 'email' => $u['email'],
             'client_id' => $u['client_id'] ? (int)$u['client_id'] : null, 'vendor_id' => $u['vendor_id'] ? (int)$u['vendor_id'] : null, 'org' => $org, 'location' => $u['location'], 'phone' => $u['phone']]];
@@ -72,7 +72,7 @@ api('GET', 'options', R_ALL, function () {
         'mapping' => array_map(fn($m) => ['client_id' => (int)$m['client_id'], 'vendor_id' => (int)$m['vendor_id']], all('SELECT * FROM client_vendor')),
         'categories' => array_column(all('SELECT name FROM product_categories ORDER BY name'), 'name'),
         'qc_types' => array_column(all('SELECT name FROM qc_types ORDER BY id'), 'name')];
-    if (in_array($r, R_INT, true)) { $o['inspectors'] = opt_list(user_opts('inspector')); $o['managers'] = opt_list(user_opts('qc_manager')); }
+    if (in_array($r, R_INT, true)) { $o['inspectors'] = opt_list(user_opts('inspector')); $o['managers'] = mgr_on() ? opt_list(user_opts('qc_manager')) : []; $o['mgr_on'] = mgr_on(); }
     return $o;
 });
 function opt_list(array $kv): array { $o = []; foreach ($kv as $k => $v) $o[] = ['id' => (int)$k, 'label' => $v]; return $o; }

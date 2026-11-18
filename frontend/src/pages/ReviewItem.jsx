@@ -8,7 +8,7 @@ import { fdt, num, pct } from '../app/util';
 
 export default function ReviewItem() {
   const { id } = useParams(); const [sp, setSp] = useSearchParams(); const revising = sp.has('revise');
-  const q = useApi('review/item', { id }); const { refresh } = useAuth(); const nav = useNavigate(); const { run, busy } = useAction();
+  const q = useApi('review/item', { id }); const { me, refresh } = useAuth(); const isSA = me.user.role === 'super_admin'; const nav = useNavigate(); const { run, busy } = useAction();
   const A = useForm({ final: 'PASS', note: '' }); const R = useForm({ sections: [], reason: '' });
   const [dev, setDev] = useState([]); const V = useForm({}); const [mAct, setMAct] = useState({});
   useEffect(() => { const d = q.data; if (!d) return;
@@ -21,7 +21,7 @@ export default function ReviewItem() {
   /* eslint-disable-next-line */ }, [q.data]);
   const done = (r, to) => { if (r) { refresh(); to ? nav(to) : q.reload(); } };
   return <Loader q={q}>{(d) => { const it = d.item, j = d.job; const insp = Math.max(1, +it.inspected_qty);
-    return <Page title={'Inspection review — ' + (it.report_no || it.sku)} sub={`${j.job_no} · ${j.client_code} – ${j.vendor_name}`} actions={it.locked ? <Link className="btn gold" to={'/report/' + it.id}>Open report</Link> : null}>
+    return <Page title={'Inspection review — ' + (it.report_no || it.sku)} sub={`${j.job_no} · ${j.client_code} – ${j.vendor_name}`} actions={<>{isSA && <Link className="btn" to={'/edit/' + it.id}>✎ Edit any point</Link>}{it.locked ? <Link className="btn gold" to={'/report/' + it.id}>Open report</Link> : null}</>}>
       <div className="grid g-73">
         <div>
           <div className="card"><div className="card-h"><h2>Inspection review — {it.report_no || `${j.job_no} / ${it.sku}`}</h2><Badge s={it.status} /></div>

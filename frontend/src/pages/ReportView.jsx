@@ -21,7 +21,7 @@ export default function ReportView() {
             <p className="muted" style={{ marginTop: -6 }}>approved {fdt(it.approved_at)}</p>
             <div className="actions mb"><Badge s="APPROVED" /><Badge s="PDF GENERATED" /><Result r={it.final_result} /><span className="right">🔒 Locked · Rev {String(it.rev).padStart(2, '0')}</span></div>
             <div className="actions"><a className="btn" target="_blank" rel="noreferrer" href={pdfUrl({ item: it.id })}>View PDF</a><a className="btn" href={pdfUrl({ item: it.id, dl: 1 })}>Download</a>
-              {me.user.role === 'super_admin' && <Link className="btn" to={`/review/${it.id}?revise=1`}>Unlock / revise</Link>}</div>
+              {me.user.role === 'super_admin' && <><Link className="btn gold" to={`/edit/${it.id}`}>✎ Edit full report</Link><Link className="btn" to={`/review/${it.id}?revise=1`}>Quick revise</Link></>}</div>
           </div>
           {it.final_result === 'CONDITIONAL' && <div className="card"><h2 className="mb">Concession</h2><div className="note">{it.manager_note}</div>
             <p>Client decision: <Badge s={it.concession_status || 'PENDING'} /> {it.concession_by ? `· ${it.concession_by} · ${fdt(it.concession_at)}` : ''}</p>

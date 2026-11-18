@@ -329,3 +329,11 @@ tr.click{cursor:pointer}
 table.t tr.sub td{background:#f8fafb;border-top:0;padding-top:6px}
 .specbox summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--rose-d)}
 .specgrid{display:grid;gap:10px;max-width:720px;margin-top:8px;position:sticky;left:0}
+.revrow{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:10px;margin-top:8px;color:var(--tx);text-decoration:none;background:#fff}
+.revrow small{display:block;color:var(--mut);font-size:12px;margin-top:2px;word-break:break-word}
+.revrow em{display:block;font-style:normal;font-size:12px;margin-top:3px;font-weight:600}
+.revrow .revdot{width:24px;height:24px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff}
+.revrow.ok .revdot{background:var(--ok)}.revrow.warn .revdot{background:var(--warn)}.revrow.miss .revdot{background:var(--ruby)}
+.revrow.warn em{color:var(--warn)}.revrow.miss{border-color:#efc3ca;background:var(--ruby-l)}.revrow.miss em{color:var(--ruby)}
+.revrow>.muted{font-size:12px;white-space:nowrap}
+.eshell{max-width:560px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 0 1px var(--line)}

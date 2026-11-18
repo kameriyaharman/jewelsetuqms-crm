@@ -79,11 +79,16 @@ export function MShell() {
     <nav className="mtabs">
       <Link to="/app" className={tab === 'home' ? 'on' : ''}><Icon n="home" />Home</Link>
       <Link to="/app/history" className={tab === 'history' ? 'on' : ''}><Icon n="clip" />My QC</Link>
-      <Link to="/app?scan=1" className="scanbtn"><Icon n="scan" />Scan</Link>
+      {me?.flags?.inspector_new_job ? <Link to="/app/new" className="scanbtn"><Icon n="plus" />New QC</Link> : <span />}
       <Link to="/app/alerts" className={tab === 'alerts' ? 'on' : ''}><Icon n="bell" />Alerts{unread ? <i>{unread}</i> : null}</Link>
       <Link to="/app/profile" className={tab === 'profile' ? 'on' : ''}><Icon n="user" />Profile</Link>
     </nav>
   </div>;
+}
+/** Super Admin full-report editor: same inspection form, centred, no inspector tabs. */
+export function EShell() {
+  useEffect(() => { document.body.classList.add('mob'); return () => document.body.classList.remove('mob'); }, []);
+  return <div className="mapp eshell"><Outlet context={{ online: true, qn: 0 }} /></div>;
 }
 export function MPage({ title, back, right, children }) {
   const nav = useNavigate();

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { homeFor, useAuth } from './app/auth';
-import { MShell, Shell } from './app/Layout';
+import { EShell, MShell, Shell } from './app/Layout';
 import { Spinner } from './app/ui';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -25,6 +25,7 @@ import { ClientDash, VendorDash } from './pages/PortalDash';
 import { Notifications, Profile } from './pages/Account';
 import { AppHome, AppJob, AppHistory, AppAlerts, AppProfile } from './pages/Inspector';
 import AppInspect from './pages/AppInspect';
+import AppNewJob from './pages/AppNewJob';
 
 const INT = ['super_admin', 'back_office', 'qc_manager'];
 function Guard({ roles, children }) {
@@ -46,9 +47,14 @@ export default function App() {
       <Route path="/app" element={<AppHome />} />
       <Route path="/app/job/:id" element={<AppJob />} />
       <Route path="/app/inspect/:id" element={<AppInspect />} />
+      <Route path="/app/new" element={<AppNewJob />} />
+      <Route path="/app/job/:id/add" element={<AppNewJob />} />
       <Route path="/app/history" element={<AppHistory />} />
       <Route path="/app/alerts" element={<AppAlerts />} />
       <Route path="/app/profile" element={<AppProfile />} />
+    </Route>
+    <Route element={G(['super_admin'], <EShell />)}>
+      <Route path="/edit/:id" element={<AppInspect />} />
     </Route>
     <Route element={role === 'inspector' ? <Navigate to="/app" replace /> : <Shell />}>
       <Route path="/dashboard" element={G(INT, <Dashboard />)} />

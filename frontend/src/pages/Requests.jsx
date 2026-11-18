@@ -43,7 +43,7 @@ export default function Requests() {
 }
 
 export function SchedulePanel({ row, managers, onDone }) {
-  const F = useForm({ date: row.scheduled_date || row.requested_date || '', time: '10:30', manager_id: row.manager_id || managers[0]?.id || '', priority: row.priority || 'Normal', location: row.location || '' });
+  const F = useForm({ date: row.scheduled_date || row.requested_date || '', time: '10:30', manager_id: row.manager_id || '', priority: row.priority || 'Normal', location: row.location || '' });
   const { run, busy } = useAction(); const b = F.bind;
   const go = async (e) => { e.preventDefault(); const r = await run(() => post('job/action', { act: 'schedule', id: row.id, ...F.f })); if (r) onDone(); };
   return <div className="card"><div className="card-h"><h2>Schedule request {row.req_no}</h2><span className="pill">From {String(row.source).toLowerCase()}</span></div>
@@ -51,7 +51,8 @@ export function SchedulePanel({ row, managers, onDone }) {
       <div><small>Scope</small><b>{row.scope_label} · {row.skus} SKUs</b></div><div><small>Requested date</small><b>{fdate(row.requested_date)}</b></div></div>
     <form onSubmit={go}>
       <div className="fr f"><div><label>Confirmed QC date</label><input type="date" required {...b('date')} /></div><div><label>Time slot</label><input type="time" {...b('time')} /></div></div>
-      <div className="fr f"><div><label>QC manager</label><Sel value={F.f.manager_id} onChange={(v) => F.set('manager_id', v)} options={managers.map((m) => [m.id, m.label])} /></div>
+      <div className="fr f">{managers.length ? <div><label>QC manager / HOD</label><Sel value={F.f.manager_id} onChange={(v) => F.set('manager_id', v)} options={managers.map((m) => [m.id, m.label])} blank="As mapped to client" /></div>
+          : <div><label>Reviewer</label><input disabled value="Super Admin (QC Manager role off)" /></div>}
         <div><label>Priority</label><Sel value={F.f.priority} onChange={(v) => F.set('priority', v)} options={['Normal', 'High', 'Urgent']} /></div></div>
       <div className="f"><label>QC location</label><input type="text" {...b('location')} /></div>
       <button className="btn pri block" disabled={busy}>CONFIRM &amp; SCHEDULE</button>

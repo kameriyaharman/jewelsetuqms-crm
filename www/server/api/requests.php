@@ -139,7 +139,7 @@ api('POST', 'job/action', R_ALL, function () {
             update('qc_items', ['hold_status' => $decision, 'hold_response' => $remark, 'hold_resp_at' => now(), 'status' => 'IN_PROGRESS', 'hold_by' => $it['hold_by'] . ' | answered by ' . $who], 'id=?', [$it['id']]);
             audit('item', (int)$it['id'], 'HOLD_' . $decision, 'hold', 'PENDING', $decision . ($remark ? ": $remark" : ''));
             notify((int)$job['inspector_id'], "Hold on {$it['sku']} " . strtolower($decision) . ' by ' . ucfirst(role()) . ($remark ? " — $remark" : '') . ' · resume inspection', 'app/inspect/' . $it['id']);
-            notify_role('qc_manager', "SKU hold answered: {$it['sku']} ($decision)", 'request/' . $job['id']);
+            notify_managers($job, "SKU hold answered: {$it['sku']} ($decision)", 'request/' . $job['id']);
             return ['ok' => true, 'message' => 'Your decision was sent to the inspector — inspection can resume.'];
         }
         if (role() !== 'client' && !is_role('super_admin')) fail('Forbidden', 403);
@@ -147,7 +147,7 @@ api('POST', 'job/action', R_ALL, function () {
         update('qc_items', ['concession_status' => $decision, 'concession_remark' => $remark, 'concession_by' => $who, 'concession_at' => now()], 'id=?', [$it['id']]);
         audit('item', (int)$it['id'], 'CONCESSION_' . $decision, 'Client decision', 'PENDING', $decision);
         item_pdf((int)$it['id'], true); if ($job['po_pdf']) job_pdf((int)$job['id'], true);
-        notify_role('qc_manager', "Client {$decision} deviation · {$it['report_no']}", 'report/' . $it['id']);
+        notify_managers($job, "Client {$decision} deviation · {$it['report_no']}", 'report/' . $it['id']);
         notify_role('vendor', "Client {$decision} deviation on {$it['report_no']}" . ($decision === 'REJECTED' ? ' — rework required' : ''), 'reports', ['vendor_id' => $job['vendor_id']]);
         return ['ok' => true, 'message' => 'Decision recorded and printed on the report.'];
     }
@@ -158,12 +158,12 @@ api('POST', 'job/action', R_ALL, function () {
             if (!is_role('super_admin', 'back_office')) break;
             if (!in_('date')) fail('Choose the confirmed QC date.');
             $d = ['scheduled_date' => in_('date'), 'time_slot' => in_('time') ? date('h:i A', strtotime((string)in_('time'))) : null, 'priority' => in_('priority', 'Normal'),
-                'manager_id' => (int)in_('manager_id') ?: null, 'location' => in_('location', $job['location']), 'scheduled_at' => now()];
+                'manager_id' => mgr_on() ? ((int)in_('manager_id') ?: ((int)val('SELECT qc_manager_id FROM clients WHERE id=?', [$job['client_id']]) ?: null)) : null, 'location' => in_('location', $job['location']), 'scheduled_at' => now()];
             if (!$job['job_no']) $d['job_no'] = next_job_no();
             if (in_array($job['status'], ['REQUESTED', 'DRAFT'], true)) $d['status'] = 'SCHEDULED';
             update('qc_jobs', $d, 'id=?', [$id]); audit('job', $id, 'SCHEDULED', 'scheduled_date', $job['scheduled_date'], $d['scheduled_date']);
             notify_job_parties($job, "QC scheduled · PO {$job['po_no']} on " . fdate($d['scheduled_date']) . ' ' . $d['time_slot'], 'request/' . $id);
-            if ($d['manager_id']) notify($d['manager_id'], "New QC job to assign · {$job['client_code']} – {$job['vendor_name']}", 'jobs');
+            notify_managers(['manager_id' => $d['manager_id']] + $job, "New QC job to assign · {$job['client_code']} – {$job['vendor_name']}", 'jobs');
             return ['ok' => true, 'message' => 'Scheduled — job ' . ($d['job_no'] ?? $job['job_no']) . ' created; vendor & client notified.'];
         case 'assign':
             if (!is_role('super_admin', 'qc_manager', 'back_office')) break;

@@ -331,3 +331,17 @@ function img_job_sql(string $a = 'j'): string {
     return "(SELECT ph.path FROM item_photos ph JOIN qc_items ii ON ii.id=ph.item_id WHERE ii.job_id=$a.id AND ph.kind='product' ORDER BY ii.id, ph.id LIMIT 1)";
 }
 function item_img(int $id): ?string { return val('SELECT ' . img_item_sql('i') . ' FROM qc_items i WHERE i.id=?', [$id]) ?: null; }
+
+/* ---------------- QC manager routing ---------------- */
+/** QC Manager / HOD role switched on in Mapping. When off, Super Admin does all manager work. */
+function mgr_on(): bool { return flag('qc_manager_role'); }
+/** Users who should get manager-level notifications for a job. */
+function manager_ids(array $job): array {
+    if (!mgr_on()) return array_map('intval', array_column(all("SELECT id FROM users WHERE role='super_admin' AND status='ACTIVE'"), 'id'));
+    if (!empty($job['manager_id'])) return [(int)$job['manager_id']];
+    $m = (int)val('SELECT qc_manager_id FROM clients WHERE id=?', [$job['client_id']]);
+    if ($m) return [$m];
+    $ids = array_map('intval', array_column(all("SELECT id FROM users WHERE role='qc_manager' AND status='ACTIVE'"), 'id'));
+    return $ids ?: array_map('intval', array_column(all("SELECT id FROM users WHERE role='super_admin' AND status='ACTIVE'"), 'id'));
+}
+function notify_managers(array $job, string $msg, string $link): void { foreach (manager_ids($job) as $u) notify($u, $msg, $link); }
