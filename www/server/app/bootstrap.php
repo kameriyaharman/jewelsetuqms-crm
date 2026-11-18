@@ -34,7 +34,7 @@ const INTERNAL_ROLES = ['super_admin', 'back_office', 'qc_manager'];
 const JOB_STATUS = [
     'DRAFT' => 'Draft', 'REQUESTED' => 'Requested', 'SCHEDULED' => 'Scheduled', 'ASSIGNED' => 'Assigned',
     'IN_PROGRESS' => 'In progress', 'SUBMITTED' => 'Submitted', 'UNDER_REVIEW' => 'Under review',
-    'RETURNED' => 'Returned', 'APPROVED' => 'Approved', 'EMAILED' => 'PDF & emailed', 'CLOSED' => 'Closed',
+    'RETURNED' => 'Returned', 'APPROVED' => 'Approved', 'PARTIAL' => 'Partial QC done (open)', 'EMAILED' => 'PDF & emailed', 'CLOSED' => 'Closed',
     'CANCELLED' => 'Cancelled',
 ];
 const ITEM_STATUS = [
@@ -283,10 +283,11 @@ function report_title(array $job): string {
 function refresh_job_status(int $jobId): void {
     $items = all('SELECT status FROM qc_items WHERE job_id=?', [$jobId]);
     $job = one('SELECT status FROM qc_jobs WHERE id=?', [$jobId]);
-    if (!$items || in_array($job['status'], ['EMAILED', 'CLOSED'], true)) return;
+    if (!$items || in_array($job['status'], ['EMAILED', 'CLOSED', 'CANCELLED'], true)) return;
     $s = array_count_values(array_column($items, 'status')); $n = count($items);
     $new = $job['status'];
-    if (($s['APPROVED'] ?? 0) === $n) $new = 'APPROVED';
+    // all lots approved: close only when every SKU's cumulative accepted qty reached its order qty, else stay open as PARTIAL QC DONE
+    if (($s['APPROVED'] ?? 0) === $n) $new = job_lines_complete($jobId) ? 'APPROVED' : 'PARTIAL';
     elseif (($s['RETURNED'] ?? 0) > 0) $new = 'RETURNED';
     elseif (($s['UNDER_REVIEW'] ?? 0) > 0) $new = 'UNDER_REVIEW';
     elseif ((($s['SUBMITTED'] ?? 0) + ($s['APPROVED'] ?? 0)) === $n) $new = 'SUBMITTED';
@@ -323,12 +324,12 @@ function user_opts(string $role): array {
 /* ---------------- product images ---------------- */
 /** SQL expression: path of an item's product picture (product photo, else an image attached to the SKU). */
 function img_item_sql(string $a = 'i'): string {
-    return "COALESCE((SELECT ph.path FROM item_photos ph WHERE ph.item_id=$a.id AND ph.kind='product' ORDER BY ph.id LIMIT 1),"
+    return "COALESCE((SELECT ph.path FROM item_photos ph WHERE ph.item_id=$a.id AND ph.kind='ref' ORDER BY ph.id DESC LIMIT 1),(SELECT ph.path FROM item_photos ph WHERE ph.item_id=$a.id AND ph.kind='product' ORDER BY ph.id LIMIT 1),"
         . "(SELECT ax.path FROM attachments ax WHERE ax.item_id=$a.id AND (LOWER(ax.path) LIKE '%.jpg' OR LOWER(ax.path) LIKE '%.jpeg' OR LOWER(ax.path) LIKE '%.png' OR LOWER(ax.path) LIKE '%.webp') ORDER BY ax.id LIMIT 1))";
 }
 /** SQL expression: first product picture of a job (for job lists / cards). */
 function img_job_sql(string $a = 'j'): string {
-    return "(SELECT ph.path FROM item_photos ph JOIN qc_items ii ON ii.id=ph.item_id WHERE ii.job_id=$a.id AND ph.kind='product' ORDER BY ii.id, ph.id LIMIT 1)";
+    return "(SELECT ph.path FROM item_photos ph JOIN qc_items ii ON ii.id=ph.item_id WHERE ii.job_id=$a.id AND ph.kind IN ('ref','product') ORDER BY ii.id, ph.kind DESC, ph.id LIMIT 1)";
 }
 function item_img(int $id): ?string { return val('SELECT ' . img_item_sql('i') . ' FROM qc_items i WHERE i.id=?', [$id]) ?: null; }
 
@@ -345,3 +346,86 @@ function manager_ids(array $job): array {
     return $ids ?: array_map('intval', array_column(all("SELECT id FROM users WHERE role='super_admin' AND status='ACTIVE'"), 'id'));
 }
 function notify_managers(array $job, string $msg, string $link): void { foreach (manager_ids($job) as $u) notify($u, $msg, $link); }
+
+/* ---------------- per-design scope & QC lots (partial QC) ---------------- */
+/** Job row with this design's own QC scope applied (a design can override the job scope). */
+function item_job(array $job, array $it): array {
+    if (!empty($it['i_scope'])) {
+        $job['scope'] = $it['i_scope']; $job['bulk_mode'] = $it['i_bulk_mode'] ?: '100';
+        if (($it['i_aql_major'] ?? '') !== '' && $it['i_aql_major'] !== null) $job['aql_major'] = (float)$it['i_aql_major'];
+        $job['defined_qty'] = (int)($it['i_defined_qty'] ?? 0);
+    }
+    return $job;
+}
+function line_root_id(array $it): int { return (int)($it['parent_id'] ?: $it['id']); }
+/** Pieces of one approved lot that count toward the order qty. */
+function lot_accepted(array $job, array $it): int {
+    if ($it['status'] !== 'APPROVED') return 0;
+    $j = item_job($job, $it);
+    if ($j['scope'] === 'SAMPLE') return (int)$it['order_qty'];
+    if ((int)$it['inspected_qty'] >= (int)$it['ready_qty']) return (int)$it['accepted_qty'];
+    return $it['final_result'] === 'FAIL' ? 0 : max(0, (int)$it['ready_qty'] - (int)$it['rejected_qty']); // sampled lot: passed lot counts
+}
+/** Running numbers of one SKU line (original + all QC lots): order, cumulative accepted, pending, lot log. */
+function line_stats(array $job, int $root): array {
+    $lots = all('SELECT * FROM qc_items WHERE id=? OR parent_id=? ORDER BY COALESCE(lot_seq,1), id', [$root, $root]);
+    $r = null; foreach ($lots as $l) if ((int)$l['id'] === $root) $r = $l;
+    $r = $r ?: $lots[0];
+    $order = (int)$r['order_qty']; $acc = 0; $rej = 0; $open = 0; $log = [];
+    foreach ($lots as $l) {
+        $a = lot_accepted($job, $l); $acc += $a; if ($l['status'] === 'APPROVED') $rej += (int)$l['rejected_qty']; else $open++;
+        $log[] = ['id' => (int)$l['id'], 'lot' => (int)($l['lot_seq'] ?: 1), 'date' => $l['insp_date'] ?: substr((string)$l['updated_at'], 0, 10), 'ready' => (int)$l['ready_qty'],
+            'inspected' => (int)$l['inspected_qty'], 'accepted' => (int)$l['accepted_qty'], 'rejected' => (int)$l['rejected_qty'], 'counted' => $a,
+            'status' => $l['status'], 'final' => $l['final_result'], 'report_no' => $l['report_no']];
+    }
+    $acc = $order > 0 ? min($acc, $order) : $acc;
+    $closed = (int)$r['line_closed'] === 1;
+    $complete = $closed || ($order > 0 ? $acc >= $order : !$open);
+    return ['root' => (int)$r['id'], 'sku' => $r['sku'], 'order' => $order, 'accepted' => $acc, 'pending' => max(0, $order - $acc), 'rejected' => $rej,
+        'lots' => count($lots), 'open_lots' => $open, 'closed' => $closed, 'close_note' => $r['close_note'], 'complete' => $complete,
+        'can_add_lot' => !$complete && !$open, 'log' => $log];
+}
+/** Every SKU line of the job has reached its order qty (or was force-closed). */
+function job_lines_complete(int $jobId): bool {
+    $job = one('SELECT * FROM qc_jobs WHERE id=?', [$jobId]);
+    foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$jobId]) as $r) if (!line_stats($job, (int)$r['id'])['complete']) return false;
+    return true;
+}
+/**
+ * New QC lot / re-inspection session for an existing SKU line: copies specs, reference image and attachments,
+ * keeps the original order qty (repaired pieces never add to it) and re-opens the job.
+ */
+function add_lot(int $rootId, int $ready, ?string $date = null): int {
+    $root = one('SELECT * FROM qc_items WHERE id=?', [$rootId]);
+    if (!$root) fail('SKU not found', 404);
+    if ($root['parent_id']) $root = one('SELECT * FROM qc_items WHERE id=?', [(int)$root['parent_id']]);
+    $job = job_load((int)$root['job_id']);
+    if (in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true)) fail('Job is closed — reopen not allowed.');
+    $L = line_stats($job, (int)$root['id']);
+    if ($L['complete']) fail("SKU {$root['sku']} is complete ({$L['accepted']}/{$L['order']} accepted).");
+    if ($L['open_lots']) fail("Finish the current QC lot of {$root['sku']} first (it is not approved yet).");
+    if ($ready <= 0) fail('Enter the ready / presented qty for this lot.');
+    if ($ready > $L['pending'] && !(int)$job['allow_excess']) fail("Presented qty ($ready) is more than pending qty ({$L['pending']}). Repaired pieces are part of the pending qty.");
+    $copy = ['job_id', 'sku', 'product', 'metal', 'plating', 'target_weight', 'length', 'lock_type', 'stamping', 'width', 'thickness', 'style_ref', 'stone_setting',
+        'spec_detail', 'instructions', 'master_sample', 'xrf_machine', 'order_qty', 'i_scope', 'i_bulk_mode', 'i_aql_major', 'i_defined_qty'];
+    $d = array_intersect_key($root, array_flip($copy));
+    // keep measurement specs, clear last session's actual values
+    $meas = jdec($root['meas_json'] ?? '', []);
+    if ($meas) { foreach ($meas as &$m) { $m['actual'] = ''; unset($m['result']); } unset($m); $d['meas_json'] = json_encode($meas); }
+    $plan = item_plan(item_job($job, $root), $ready);
+    $seq = (int)val('SELECT MAX(COALESCE(lot_seq,1)) FROM qc_items WHERE id=? OR parent_id=?', [$root['id'], $root['id']]) + 1;
+    $id = insert('qc_items', $d + ['parent_id' => $root['id'], 'lot_seq' => $seq, 'ready_qty' => $ready, 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']),
+        'reinspection' => 1, 'insp_type' => 'RE-INSPECTION', 'insp_date' => $date ?: today(), 'status' => 'PENDING', 'updated_at' => now()]);
+    if ((int)$root['lot_seq'] !== 1) q('UPDATE qc_items SET lot_seq=1 WHERE id=?', [$root['id']]);
+    foreach (all("SELECT * FROM item_photos WHERE item_id=? AND kind='ref'", [$root['id']]) as $p) insert('item_photos', ['item_id' => $id, 'kind' => 'ref', 'path' => $p['path'], 'remark' => 'Reference', 'created_at' => now()]);
+    foreach (all('SELECT * FROM attachments WHERE item_id=?', [$root['id']]) as $a) insert('attachments', ['job_id' => $a['job_id'], 'item_id' => $id, 'path' => $a['path'], 'name' => $a['name'], 'created_at' => now()]);
+    audit('item', $id, 'LOT_ADDED', 'Lot', null, "Lot $seq · ready $ready · pending before {$L['pending']}");
+    audit('job', (int)$job['id'], 'LOT_ADDED', $root['sku'], null, "Lot $seq ($ready pcs)");
+    if (in_array($job['status'], ['PARTIAL', 'APPROVED'], true)) { q("UPDATE qc_jobs SET status='ASSIGNED', scheduled_date=? WHERE id=?", [$date ?: today(), $job['id']]); audit('job', (int)$job['id'], 'STATUS', 'status', $job['status'], 'ASSIGNED'); }
+    if ($job['inspector_id'] && (int)$job['inspector_id'] !== (int)(user()['id'] ?? 0)) notify((int)$job['inspector_id'], "QC lot $seq added · {$root['sku']} · {$job['job_no']} ($ready pcs)", 'app/job/' . $job['id']);
+    return $id;
+}
+/** Job cards that share the same client, vendor and PO no. (Excel import makes one card per design; the PO report merges them). */
+function po_group_ids(array $job): array {
+    return array_map('intval', array_column(all("SELECT id FROM qc_jobs WHERE client_id=? AND vendor_id=? AND po_no=? AND status<>'CANCELLED' ORDER BY id", [$job['client_id'], $job['vendor_id'], $job['po_no']]), 'id')) ?: [(int)$job['id']];
+}

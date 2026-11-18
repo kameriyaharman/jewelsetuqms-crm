@@ -3,16 +3,24 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
-import { fdate } from '../app/util';
+import { Badge, Empty, Icon, Loader, Modal, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
+import { fdate, num, today } from '../app/util';
 
-const TABS = [['ALL', 'All'], ['UNASSIGNED', 'Unassigned'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['REVIEW', 'Review'], ['CLOSED', 'Reported / closed']];
+const TABS = [['ALL', 'All'], ['UNASSIGNED', 'Unassigned'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['REVIEW', 'Review'], ['OPEN', 'Open / partial QC'], ['CLOSED', 'Complete / closed']];
 const OPEN = ['SCHEDULED', 'ASSIGNED', 'REQUESTED', 'IN_PROGRESS'];
+const BULK = ['SCHEDULED', 'ASSIGNED', 'REQUESTED', 'IN_PROGRESS', 'PARTIAL'];
 
 export default function Jobs() {
-  const { me, refresh } = useAuth(); const canAssign = ['super_admin', 'qc_manager'].includes(me.user.role);
-  const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'ALL';
-  const q = useApi('jobs', { f });
+  const { me, refresh } = useAuth(); const canAssign = ['super_admin', 'qc_manager', 'back_office'].includes(me.user.role);
+  const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'ALL'; const qs = sp.get('q') || '';
+  const q = useApi('jobs', { f, q: qs });
+  const [search, setSearch] = useState(qs); const [pick, setPick] = useState(new Set()); const [bulk, setBulk] = useState({ inspector_id: '', date: '' });
+  const [lot, setLot] = useState(null); const { run, busy } = useAction();
+  useEffect(() => { setPick(new Set()); }, [f, qs]);
+  const go = (o) => { const n = { f, ...(qs ? { q: qs } : {}), ...o }; Object.keys(n).forEach((k) => !n[k] && delete n[k]); setSp(n); };
+  const toggle = (id) => setPick((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const doBulk = async () => { const r = await run(() => post('jobs/bulk_assign', { ids: [...pick], ...bulk })); if (r) { setPick(new Set()); q.reload(); refresh(); } };
+  const addLot = async () => { const r = await run(() => post('job/action', { act: 'add_lot', id: lot.job_id, item_id: lot.item_id, ready_qty: lot.ready, date: lot.date })); if (r) { setLot(null); q.reload(); refresh(); } };
   const [view, setViewS] = useState(() => { try { return localStorage.getItem('qt_jobs_view') || 'list'; } catch { return 'list'; } });
   const setView = (v) => { setViewS(v); try { localStorage.setItem('qt_jobs_view', v); } catch { /* ignore */ } };
   let sel = Number(sp.get('id')) || null;
@@ -22,24 +30,41 @@ export default function Jobs() {
     <Loader q={q}>{(d) => <div className={'grid ' + (canAssign && selRow && OPEN.includes(selRow.status) ? 'g-82' : '')}>
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}><div className="tabs" style={{ flex: 1 }}>{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l} <b>{d.counts[k] || 0}</b></a>)}</div>
+          <form onSubmit={(e) => { e.preventDefault(); go({ q: search.trim(), id: '' }); }} style={{ display: 'flex', gap: 6 }}><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="PO no. / job / SKU / vendor" style={{ width: 210 }} /><button className="btn sm">Search</button></form>
           <span className="viewtog"><button className={view === 'list' ? 'on' : ''} title="List view" onClick={() => setView('list')}><Icon n="rows" /></button><button className={view === 'cards' ? 'on' : ''} title="Card view" onClick={() => setView('cards')}><Icon n="cards" /></button></span></div>
+        {qs && <p className="muted" style={{ margin: '0 0 8px', fontSize: 12.5 }}>Showing {d.rows.length} job card(s) for “<b>{qs}</b>” · <a href="#" onClick={(e) => { e.preventDefault(); setSearch(''); go({ q: '' }); }}>clear</a></p>}
+        {canAssign && pick.size > 0 && <div className="bulkbar"><b>{pick.size} job(s) selected</b>
+          <Sel value={bulk.inspector_id} onChange={(v) => setBulk({ ...bulk, inspector_id: v })} options={d.inspectors.map((i) => [i.id, `${i.emp_code} · ${i.name}`])} blank="Select inspector" />
+          <input type="date" value={bulk.date} onChange={(e) => setBulk({ ...bulk, date: e.target.value })} title="QC date (optional)" />
+          <button className="btn gold" disabled={busy || !bulk.inspector_id} onClick={doBulk}>ASSIGN SELECTED ({pick.size} JOBS)</button>
+          <button className="btn sm" onClick={() => setPick(new Set())}>Clear</button></div>}
         {!d.rows.length ? <Empty>No jobs.</Empty> : view === 'cards' ? <div className="cards">{d.rows.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
             <Link to={'/request/' + j.id} className="pimg"><Thumb src={j.img} size={150} alt={j.job_no} /></Link>
             <div className="pbody"><Link className="strong mono" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><b>{j.vendor_name}</b><small className="muted">{j.client_code} · PO {j.po_no} · {j.skus} SKU</small>
               <small>{fdate(j.scheduled_date, 'd M Y')} {j.time_slot}</small><small>{j.insp_code ? `${j.insp_code} · ${j.insp_name}` : 'Not assigned'}</small></div>
             <div className="pfoot">{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
               {canAssign && OPEN.includes(j.status) && <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button>}</div></div>)}</div>
-          : <div className="tbl-wrap"><table className="t"><thead><tr><th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKUs</th><th>QC date</th><th>Inspector</th><th>Status</th></tr></thead><tbody>
+          : <div className="tbl-wrap"><table className="t"><thead><tr>{canAssign && <th style={{ width: 28 }}><input type="checkbox" title="Select all" checked={d.rows.filter((j) => BULK.includes(j.status)).length > 0 && d.rows.filter((j) => BULK.includes(j.status)).every((j) => pick.has(j.id))} onChange={(e) => setPick(e.target.checked ? new Set(d.rows.filter((j) => BULK.includes(j.status)).map((j) => j.id)) : new Set())} /></th>}
+            <th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKU</th>{f === 'OPEN' ? <><th className="num">Order</th><th className="num">Accepted</th><th className="num">Balance</th></> : <th>QC date</th>}<th>Inspector</th><th>Status</th></tr></thead><tbody>
           {d.rows.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
-            <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.job_no} /><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></div></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono">{j.po_no}</td><td>{j.skus}</td>
-            <td>{fdate(j.scheduled_date, 'd M')} <small>{j.time_slot}</small></td><td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : '—'}</td>
+            {canAssign && <td>{BULK.includes(j.status) && <input type="checkbox" checked={pick.has(j.id)} onChange={() => toggle(j.id)} />}</td>}
+            <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.job_no} /><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></div></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono"><a href="#" onClick={(e) => { e.preventDefault(); setSearch(j.po_no); go({ q: j.po_no, id: '' }); }}>{j.po_no}</a></td><td>{+j.skus === 1 ? <span className="mono">{j.sku1}</span> : `${j.skus} SKUs`}</td>
+            {f === 'OPEN' ? <><td className="num">{num(j.bal?.order)}</td><td className="num ok-t"><b>{num(j.bal?.accepted)}</b></td><td className="num bad-t"><b>{num(j.bal?.pending)}</b></td></> : <>
+            <td>{fdate(j.scheduled_date, 'd M')} <small>{j.time_slot}</small></td></>}<td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : '—'}</td>
             <td>{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
-              {canAssign && OPEN.includes(j.status) && <> <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}</td></tr>)}
+              {canAssign && OPEN.includes(j.status) && <> <button className="btn sm" onClick={() => go({ id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}
+              {j.status === 'PARTIAL' && j.bal?.lot && <> <button className="btn sm gold" onClick={() => setLot({ job_id: j.id, job_no: j.job_no, ...j.bal.lot, ready: j.bal.lot.pending, date: today() })}>+ Add next QC lot</button></>}</td></tr>)}
         </tbody></table></div>}
         <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>Lifecycle: Requested → Scheduled → Assigned → In progress → Submitted → Under review → Approved → PDF generated → Emailed → Closed</p>
       </div>
       {canAssign && selRow && OPEN.includes(selRow.status) && <AssignPanel key={selRow.id} id={selRow.id} onDone={() => { q.reload(); refresh(); }} />}
     </div>}</Loader>
+    <Modal open={!!lot} title={lot ? `Add next QC lot · ${lot.sku}` : ''} onClose={() => setLot(null)}>
+      {lot && <><p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>{lot.job_no} · pending balance <b>{num(lot.pending)}</b> pcs (un-presented + repaired). Specs, images and files are copied; the order qty does not change.</p>
+        <div className="fr f"><div><label>Presented / ready qty (this lot)</label><input type="number" min="1" max={lot.pending} value={lot.ready} onChange={(e) => setLot({ ...lot, ready: e.target.value })} /></div>
+          <div><label>QC date</label><input type="date" value={lot.date} onChange={(e) => setLot({ ...lot, date: e.target.value })} /></div></div>
+        <button className="btn gold block" disabled={busy || !(+lot.ready > 0)} onClick={addLot}>ADD QC LOT &amp; RE-OPEN JOB</button></>}
+    </Modal>
   </Page>;
 }
 

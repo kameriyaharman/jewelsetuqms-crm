@@ -23,7 +23,16 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
     $job = job_load((int)in_('id'));
     if (!$job || !can_see_job($job)) fail('Request not found', 404);
     $job['scope_label'] = scope_label($job);
-    $items = all('SELECT i.*, ' . img_item_sql() . ' img FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']]);
+    $items = all('SELECT i.*, ' . img_item_sql() . ' img FROM qc_items i WHERE i.job_id=? ORDER BY COALESCE(i.parent_id, i.id), COALESCE(i.lot_seq, 1), i.id', [$job['id']]);
+    $openJob = !in_array($job['status'], ['CLOSED', 'CANCELLED'], true);
+    foreach ($items as &$i) {
+        if (!$i['parent_id']) $i['line'] = line_stats($job, (int)$i['id']);
+        $e = one("SELECT a.created_at, u.name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE a.entity='item' AND a.entity_id=? AND a.action IN ('EDIT','ADMIN_EDIT','UPDATE') ORDER BY a.id DESC LIMIT 1", [$i['id']]);
+        $i['edited'] = $e ? ['by' => $e['name'] ?: 'System', 'at' => $e['created_at']] : null;
+        $i['scope_label'] = $i['i_scope'] ? scope_label(item_job($job, $i)) : null;
+        $i['can_remove'] = $openJob && $i['status'] === 'PENDING' && !$i['started_at'] && !(int)$i['locked'];
+    }
+    unset($i);
     $ids = array_map('intval', array_column($items, 'id'));
     $log = all('SELECT a.*, u.name uname FROM audit_log a LEFT JOIN users u ON u.id=a.user_id WHERE (a.entity=? AND a.entity_id=?) ' .
         ($ids ? "OR (a.entity='item' AND a.entity_id IN (" . implode(',', $ids) . '))' : '') . ' ORDER BY a.id DESC LIMIT 40', ['job', $job['id']]);
@@ -36,7 +45,9 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
         'cancel' => (is_role('super_admin', 'back_office') && in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED', 'ASSIGNED'], true)) || ($cv && $mine && in_array($job['status'], ['DRAFT', 'REQUESTED'], true)),
         'report_actions' => is_internal() && in_array($job['status'], ['EMAILED', 'APPROVED'], true),
         'finalize' => is_role('super_admin', 'qc_manager') && $job['status'] === 'APPROVED', 'close' => is_internal() && $job['status'] === 'EMAILED',
-        'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => flag('allow_job_split') && count($items) > 1];
+        'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => flag('allow_job_split') && count($items) > 1,
+        'edit_design' => is_role('super_admin', 'back_office', 'qc_manager') && $openJob, 'add_lot' => is_internal() && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
+        'force_close' => is_role('super_admin', 'qc_manager') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'DRAFT', 'REQUESTED'], true)];
     // hide unpublished results from clients/vendors
     if ($cv) foreach ($items as &$i) if ($i['status'] !== 'APPROVED') { $i['final_result'] = null; $i['system_result'] = null; }
     unset($i);
@@ -198,6 +209,32 @@ api('POST', 'job/action', R_ALL, function () {
             if ($job['status'] !== 'EMAILED') fail('Only reported jobs can be closed.');
             q("UPDATE qc_jobs SET status='CLOSED', closed_at=? WHERE id=?", [now(), $id]); audit('job', $id, 'STATUS', 'status', 'EMAILED', 'CLOSED');
             return ['ok' => true, 'message' => 'Job closed.'];
+        case 'add_lot':
+            if (!is_internal()) break;
+            $nid = add_lot((int)in_('item_id'), (int)in_('ready_qty'), in_('date') ?: null);
+            if ((int)in_('inspector_id') && is_role('super_admin', 'qc_manager', 'back_office')) { $ins = (int)in_('inspector_id'); q('UPDATE qc_jobs SET inspector_id=? WHERE id=?', [$ins, $id]); notify($ins, "QC lot added for you · {$job['job_no']} · PO {$job['po_no']}", 'app/job/' . $id); }
+            return ['ok' => true, 'item_id' => $nid, 'message' => 'Next QC lot added — job is open for inspection again.'];
+        case 'force_close':
+            if (!is_role('super_admin', 'qc_manager')) break;
+            $note = trim((string)in_('note')); if ($note === '') fail('Enter a reason (e.g. client accepted short shipment).');
+            if (in_array($job['status'], ['CLOSED', 'CANCELLED'], true)) fail('Job is already closed.');
+            $only = (int)in_('item_id'); $items = all('SELECT * FROM qc_items WHERE job_id=?', [$id]);
+            $roots = array_values(array_filter($items, fn($i) => !$i['parent_id'] && (!$only || (int)$i['id'] === $only || (int)$i['id'] === (int)val('SELECT parent_id FROM qc_items WHERE id=?', [$only]))));
+            $rootIds = array_map(fn($r) => (int)$r['id'], $roots);
+            foreach ($items as $i) {
+                if (!in_array(line_root_id($i), $rootIds, true) || $i['status'] === 'APPROVED') continue;
+                if ($i['parent_id'] && $i['status'] === 'PENDING' && !$i['started_at']) { q('DELETE FROM qc_items WHERE id=?', [$i['id']]); q('DELETE FROM item_photos WHERE item_id=?', [$i['id']]); q('DELETE FROM attachments WHERE item_id=?', [$i['id']]); audit('item', (int)$i['id'], 'LOT_REMOVED', 'Lot', null, 'Removed at force close'); continue; }
+                fail("SKU {$i['sku']} (lot " . (int)($i['lot_seq'] ?: 1) . ") is " . strtolower(ITEM_STATUS[$i['status']] ?? $i['status']) . ' — approve it, or remove an un-inspected design via Edit design, before force close.');
+            }
+            foreach ($roots as $r) { update('qc_items', ['line_closed' => 1, 'close_note' => $note], 'id=?', [$r['id']]); audit('item', (int)$r['id'], 'FORCE_CLOSE', 'SKU line', null, $note); }
+            refresh_job_status($id);
+            $now = one('SELECT status FROM qc_jobs WHERE id=?', [$id])['status'];
+            if ($now === 'APPROVED') {
+                require_once ROOT . '/app/workflow.php'; finalize_job_if_ready($id);
+                if (!$only) { q("UPDATE qc_jobs SET status='CLOSED', closed_at=? WHERE id=?", [now(), $id]); audit('job', $id, 'FORCE_CLOSE', 'status', 'EMAILED', 'CLOSED'); audit('job', $id, 'FORCE_CLOSE', 'Reason', null, $note); }
+                return ['ok' => true, 'message' => $only ? 'SKU closed — all SKUs done, PO report generated.' : 'Job force-closed. Consolidated PO report generated' . (setting('auto_email_on_approve', '1') === '1' ? ' and emailed.' : '.')];
+            }
+            return ['ok' => true, 'message' => 'SKU line closed at ' . ($only ? 'current' : 'cumulative') . ' accepted qty.'];
         case 'finalize':
             if (!is_role('super_admin', 'qc_manager')) break;
             refresh_job_status($id); finalize_job_if_ready($id);
@@ -417,8 +454,10 @@ api('POST', 'import/create', ['super_admin', 'back_office', 'vendor'], function 
     $isV = import_allowed(); $imp = $_SESSION['import'] ?? null;
     if (!$imp) fail('Upload a file first.');
     $status = in_('mode') === 'draft' ? 'DRAFT' : 'REQUESTED';
-    $groups = []; foreach ($imp['rows'] as $r) { if ($r['errors']) continue; $groups[$r['vendor_id'] . '|' . $r['po'] . '|' . $r['scope']['label']][] = $r; }
-    $made = [];
+    // 1 design (SKU) = 1 job card (setting); the PO no. stays common so the PO-wise report merges them again
+    $one = flag('import_one_job_per_design');
+    $groups = []; foreach ($imp['rows'] as $k => $r) { if ($r['errors']) continue; $groups[$one ? 'r' . $k : $r['vendor_id'] . '|' . $r['po'] . '|' . $r['scope']['label']][] = $r; }
+    $made = []; $jobs = []; $byPo = [];
     foreach ($groups as $g) {
         $f = $g[0]; $sc = $f['scope'];
         $job = ['req_no' => next_req_no(), 'source' => $isV ? 'Vendor portal' : 'Excel import', 'client_id' => $imp['client_id'], 'vendor_id' => $f['vendor_id'], 'po_no' => $f['po'],
@@ -426,23 +465,29 @@ api('POST', 'import/create', ['super_admin', 'back_office', 'vendor'], function 
             'requested_date' => $f['date'] ?: date('Y-m-d', strtotime('+2 days')), 'scope' => $sc['scope'], 'bulk_mode' => $sc['bulk_mode'], 'insp_level' => 'II',
             'aql_critical' => 0, 'aql_major' => $sc['aql_major'], 'aql_minor' => 4.0, 'defined_qty' => $sc['defined_qty'], 'allow_excess' => 0,
             'specs' => 'Imported from ' . $imp['file'], 'status' => $status, 'created_by' => user()['id'], 'created_at' => now()];
+        if ($status === 'REQUESTED' && $one) $job['job_no'] = next_job_no();
         $jid = insert('qc_jobs', $job); $job['id'] = $jid;
         foreach ($g as $r) {
             $plan = item_plan($job, $r['ready']);
             insert('qc_items', ['job_id' => $jid, 'sku' => $r['sku'], 'product' => $r['product'], 'metal' => $r['metal'], 'plating' => $r['plating'], 'target_weight' => $r['weight'],
                 'length' => $r['length'], 'lock_type' => $r['lock'], 'stamping' => $r['stamping'], 'style_ref' => $r['style'], 'stone_setting' => $r['stone'], 'spec_detail' => $r['detail'] ?? '', 'instructions' => $r['instructions'] ?? '', 'master_sample' => 'Approved Master Sample Available',
-                'order_qty' => $r['order'], 'ready_qty' => $r['ready'], 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'status' => 'PENDING', 'updated_at' => now()]);
+                'order_qty' => $r['order'], 'ready_qty' => $r['ready'], 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']), 'lot_seq' => 1, 'status' => 'PENDING', 'updated_at' => now()]);
             $iid = (int)db()->lastInsertId();
-            if (!empty($r['img'])) insert('item_photos', ['item_id' => $iid, 'kind' => 'product', 'path' => $r['img'], 'remark' => 'From Excel', 'created_at' => now()]);
+            if (!empty($r['img'])) insert('item_photos', ['item_id' => $iid, 'kind' => 'ref', 'path' => $r['img'], 'remark' => 'From Excel', 'created_at' => now()]);
         }
         if ($imp['path']) insert('attachments', ['job_id' => $jid, 'item_id' => null, 'path' => $imp['path'], 'name' => $imp['file'], 'created_at' => now()]);
         audit('job', $jid, 'CREATE', 'source', null, 'Excel import');
-        if ($status === 'REQUESTED') { notify_job_parties(job_load($jid), "QC request {$job['req_no']} created from Excel · PO {$job['po_no']}", 'request/' . $jid);
-            if ($isV) notify_role('back_office', "Vendor bulk request {$job['req_no']} · PO {$job['po_no']}", 'request/' . $jid); }
-        $made[] = $job['req_no'];
+        $made[] = $job['job_no'] ?? $job['req_no']; $byPo[$job['po_no']][] = $jid;
+    }
+    // one notification per PO instead of one per design
+    if ($status === 'REQUESTED') foreach ($byPo as $po => $ids) {
+        $j1 = job_load($ids[0]); $n = count($ids);
+        notify_job_parties($j1, ($n > 1 ? "$n QC job cards" : "QC request {$j1['req_no']}") . " created from Excel · PO $po", $n > 1 ? 'jobs?q=' . rawurlencode($po) : 'request/' . $ids[0]);
+        if ($isV) notify_role('back_office', "Vendor bulk request · $n design(s) · PO $po", 'jobs?q=' . rawurlencode($po));
     }
     unset($_SESSION['import']);
-    return ['ok' => true, 'created' => $made, 'message' => count($made) . ' QC request(s) created (' . implode(', ', $made) . ') — status ' . $status . '.'];
+    $show = count($made) > 6 ? implode(', ', array_slice($made, 0, 3)) . ' … ' . end($made) : implode(', ', $made);
+    return ['ok' => true, 'created' => $made, 'po' => array_keys($byPo), 'message' => count($made) . ($one ? ' job card(s) — one per design — ' : ' QC request(s) ') . "created ($show) — status $status."];
 });
 api('GET', 'import/template', ['super_admin', 'back_office', 'vendor'], function () {
     require_once ROOT . '/app/xlsx.php';
@@ -464,4 +509,74 @@ api('GET', 'import/template', ['super_admin', 'back_office', 'vendor'], function
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $name . '"');
     echo xlsx_write($rows, 'QC Requirement'); exit;
+});
+
+/* ----- design-wise edit inside a generated job card (Super Admin / Back Office / QC Manager) ----- */
+const DESIGN_FIELDS = ['sku', 'product', 'metal', 'plating', 'target_weight', 'length', 'width', 'thickness', 'lock_type', 'stamping', 'style_ref', 'stone_setting', 'spec_detail', 'instructions', 'master_sample'];
+api('POST', 'item/save', ['super_admin', 'back_office', 'qc_manager'], function () {
+    $D = json_decode((string)($_POST['data'] ?? ''), true) ?: inp();
+    $id = (int)($D['id'] ?? 0);
+    $it = $id ? one('SELECT * FROM qc_items WHERE id=?', [$id]) : null;
+    $job = job_load($it ? (int)$it['job_id'] : (int)($D['job_id'] ?? 0));
+    if (!$job || ($id && !$it)) fail('Not found', 404);
+    if (in_array($job['status'], ['CLOSED', 'CANCELLED'], true)) fail('Job card is closed — editing is not allowed.');
+    $up = [];
+    foreach (DESIGN_FIELDS as $k) if (array_key_exists($k, $D)) { $v = $k === 'sku' ? strtoupper(trim((string)$D[$k])) : trim((string)$D[$k]); if (!$it || (string)$v !== (string)$it[$k]) $up[$k] = $v; }
+    if (array_key_exists('sku', $up) && $up['sku'] === '') fail('SKU / design no. is required.');
+    $sku = $up['sku'] ?? $it['sku'] ?? '';
+    if (val('SELECT id FROM qc_items WHERE job_id=? AND sku=? AND parent_id IS NULL AND id<>?', [$job['id'], $sku, $it ? line_root_id($it) : 0])) fail("SKU $sku is already in this job card.");
+    $locked = $it && ((int)$it['locked'] || in_array($it['status'], ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'], true));
+    // quantities and scope: only while the design is not yet inspected/approved (order qty can change anytime the job is open)
+    $oq = isset($D['order_qty']) ? max(0, (int)$D['order_qty']) : null; $rq = isset($D['ready_qty']) ? max(0, (int)$D['ready_qty']) : null;
+    if ($oq !== null && (!$it || $oq !== (int)$it['order_qty'])) { if ($it && $it['parent_id']) fail('Change order qty on the first lot of this SKU.'); $up['order_qty'] = $oq; }
+    $sc = array_key_exists('scope', $D) ? (string)$D['scope'] : null;
+    $scopeMap = ['' => [null, null, null, null], 'JOB' => [null, null, null, null], 'BULK100' => ['BULK', '100', null, null], 'SAMPLE' => ['SAMPLE', '100', null, (int)($D['defined_qty'] ?? 0) ?: null],
+        'AQL1.5' => ['BULK', 'AQL', '1.5', null], 'AQL2.5' => ['BULK', 'AQL', '2.5', null], 'AQL4.0' => ['BULK', 'AQL', '4.0', null], 'DEFINED' => ['BULK', 'DEFINED', null, max(1, (int)($D['defined_qty'] ?? 0))]];
+    if ($sc !== null && isset($scopeMap[$sc])) { [$a, $b2, $c, $dq] = $scopeMap[$sc]; foreach (['i_scope' => $a, 'i_bulk_mode' => $b2, 'i_aql_major' => $c, 'i_defined_qty' => $dq] as $k => $v) if (!$it || (string)$it[$k] !== (string)$v) $up[$k] = $v; }
+    if ($rq !== null && (!$it || $rq !== (int)$it['ready_qty'])) $up['ready_qty'] = $rq;
+    if ($locked && array_intersect_key($up, array_flip(['ready_qty', 'i_scope', 'i_bulk_mode', 'i_aql_major', 'i_defined_qty']))) fail('This design is already submitted/approved — ready qty and QC scope cannot change. Use Edit full report (Super Admin) or add a new QC lot.');
+    $order = $up['order_qty'] ?? (int)($it['order_qty'] ?? 0); $ready = $up['ready_qty'] ?? (int)($it['ready_qty'] ?? 0);
+    if (!$it && $ready <= 0) fail('Ready qty is required.');
+    if ($order && $ready > $order && !(int)$job['allow_excess'] && (!$it || !$it['parent_id'])) fail("Ready qty ($ready) is more than order qty ($order).");
+    if (isset($up['ready_qty']) || array_intersect_key($up, array_flip(['i_scope', 'i_bulk_mode', 'i_aql_major', 'i_defined_qty']))) {
+        $plan = item_plan(item_job($job, array_merge($it ?: [], $up)), $ready); $up['insp_qty'] = $plan['insp_qty']; $up['plan_json'] = json_encode($plan['plan']);
+    }
+    if (!$it) {
+        if (!isset($up['order_qty'])) $up['order_qty'] = $ready;
+        $id = insert('qc_items', $up + ['job_id' => $job['id'], 'product' => $up['product'] ?? 'Jewellery', 'master_sample' => $up['master_sample'] ?? 'Approved Master Sample Available', 'lot_seq' => 1, 'status' => 'PENDING', 'updated_at' => now()]);
+        audit('item', $id, 'EDIT', 'Design added', null, $sku); audit('job', (int)$job['id'], 'EDIT', 'Design added', null, $sku);
+        if (in_array($job['status'], ['PARTIAL', 'APPROVED'], true)) { q("UPDATE qc_jobs SET status='ASSIGNED' WHERE id=?", [$job['id']]); audit('job', (int)$job['id'], 'STATUS', 'status', $job['status'], 'ASSIGNED'); }
+        if ($job['inspector_id']) notify((int)$job['inspector_id'], "New design $sku added to {$job['job_no']}", 'app/job/' . $job['id']);
+    } else {
+        foreach ($up as $k => $v) if (!in_array($k, ['plan_json'], true)) audit('item', $id, 'EDIT', $k, $it[$k], $v, (int)$it['rev']);
+        if ($up) update('qc_items', $up + ['updated_at' => now()], 'id=?', [$id]);
+        // spec changes on the first lot flow to later lots of the same SKU that are not inspected yet
+        $flow = array_intersect_key($up, array_flip(array_merge(DESIGN_FIELDS, ['order_qty'])));
+        if ($flow && !$it['parent_id']) foreach (all("SELECT id FROM qc_items WHERE parent_id=? AND status='PENDING'", [$id]) as $c) update('qc_items', $flow, 'id=?', [$c['id']]);
+    }
+    // reference / CAD image (replaces the previous reference picture)
+    $f = $_FILES['ref'] ?? null;
+    if ($f && $f['error'] === UPLOAD_ERR_OK) {
+        $sv = save_upload($f, 'photos', ['jpg', 'jpeg', 'png', 'webp']); if (!$sv) fail('Reference image must be JPG, PNG or WEBP.');
+        q("DELETE FROM item_photos WHERE item_id=? AND kind='ref'", [$id]);
+        insert('item_photos', ['item_id' => $id, 'kind' => 'ref', 'path' => $sv['path'], 'remark' => 'Reference', 'created_at' => now()]);
+        audit('item', $id, 'EDIT', 'Reference image', null, $sv['name']);
+        $root = $it && $it['parent_id'] ? (int)$it['parent_id'] : $id;
+        foreach (all("SELECT id FROM qc_items WHERE (parent_id=? OR id=?) AND id<>? AND status<>'APPROVED'", [$root, $root, $id]) as $c) { q("DELETE FROM item_photos WHERE item_id=? AND kind='ref'", [$c['id']]); insert('item_photos', ['item_id' => $c['id'], 'kind' => 'ref', 'path' => $sv['path'], 'remark' => 'Reference', 'created_at' => now()]); }
+    }
+    if ($it) refresh_job_status((int)$job['id']); else refresh_job_status((int)$job['id']);
+    return ['ok' => true, 'id' => $id, 'message' => $it ? 'Design updated.' : "Design $sku added to the job card."];
+});
+api('POST', 'item/delete', ['super_admin', 'back_office', 'qc_manager'], function () {
+    $it = one('SELECT * FROM qc_items WHERE id=?', [(int)in_('id')]); if (!$it) fail('Not found', 404);
+    $job = job_load((int)$it['job_id']);
+    if (in_array($job['status'], ['CLOSED', 'CANCELLED'], true)) fail('Job card is closed.');
+    if ($it['status'] !== 'PENDING' || $it['started_at'] || (int)$it['locked']) fail('Only un-inspected designs can be removed.');
+    if (!$it['parent_id'] && val('SELECT COUNT(*) FROM qc_items WHERE parent_id=?', [$it['id']])) fail('This SKU has later QC lots — it cannot be removed.');
+    if ((int)val('SELECT COUNT(*) FROM qc_items WHERE job_id=?', [$job['id']]) <= 1) fail('A job card needs at least one design — cancel the job instead.');
+    q('DELETE FROM item_photos WHERE item_id=?', [$it['id']]); q('DELETE FROM attachments WHERE item_id=?', [$it['id']]); q('DELETE FROM qc_items WHERE id=?', [$it['id']]);
+    audit('job', (int)$job['id'], 'EDIT', 'Design removed', $it['sku'] . ($it['parent_id'] ? ' lot ' . $it['lot_seq'] : ''), null);
+    refresh_job_status((int)$job['id']);
+    require_once ROOT . '/app/workflow.php'; finalize_job_if_ready((int)$job['id']);
+    return ['ok' => true, 'message' => "Design {$it['sku']} removed."];
 });

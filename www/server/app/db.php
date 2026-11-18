@@ -60,7 +60,7 @@ function db_install(): void {
             created_by INT NULL, created_at $DT, scheduled_at $DT NULL, assigned_at $DT NULL, started_at $DT NULL,
             submitted_at $DT NULL, approved_at $DT NULL, emailed_at $DT NULL, closed_at $DT NULL, po_pdf $T NULL",
         'qc_items' => "id $pk, job_id INT NOT NULL, sku VARCHAR(80) NOT NULL, product $T, metal $T, plating $T, target_weight $T,
-            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, spec_detail TEXT NULL, instructions TEXT NULL, spec_check VARCHAR(10) NULL, spec_remark TEXT NULL, factory_rep $T NULL, insp_type VARCHAR(30) NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
+            length $T, lock_type $T, stamping $T, width $T, thickness $T, style_ref $T NULL, stone_setting $T NULL, spec_detail TEXT NULL, instructions TEXT NULL, parent_id INT NULL, lot_seq INT NULL, line_closed INT NULL, close_note TEXT NULL, i_scope VARCHAR(10) NULL, i_bulk_mode VARCHAR(10) NULL, i_aql_major VARCHAR(10) NULL, i_defined_qty INT NULL, spec_check VARCHAR(10) NULL, spec_remark TEXT NULL, factory_rep $T NULL, insp_type VARCHAR(30) NULL, master_sample $T NULL, lot_no $T NULL, xrf_machine $T NULL, factory_coop VARCHAR(20) NULL, factory_line VARCHAR(20) NULL, factory_ready VARCHAR(20) NULL, order_qty INT DEFAULT 0, ready_qty INT DEFAULT 0,
             insp_qty INT DEFAULT 0, plan_json TEXT, status VARCHAR(20) DEFAULT 'PENDING', step INT DEFAULT 0,
             inspected_qty INT DEFAULT 0, accepted_qty INT DEFAULT 0, rejected_qty INT DEFAULT 0, reinspection INT DEFAULT 0,
             gps $T NULL, insp_date $D NULL, checks_json $TXT, meas_json $TXT, tests_json $TXT,
@@ -90,7 +90,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 4) return;
+    if ($ver >= 5) return;
+    if ($ver === 4) { db_migrate_v5(); return; }
     if ($ver === 3) { db_migrate_v4(); return; }
     if ($ver === 2) { db_migrate_v3(); return; }
     $T = 'VARCHAR(255)';
@@ -123,6 +124,20 @@ function db_migrate_v4(): void {
     }
     foreach (['qc_manager_role' => '0', 'inspector_new_job' => '1', 'inspector_edit_after_submit' => '1'] as $k => $v) if (setting($k, '') === '') set_setting($k, $v);
     set_setting('schema_version', '4');
+    db_migrate_v5();
+}
+/** v5: QC lots / re-inspection sessions per SKU, per-design scope, reference image kind, new defaults. */
+function db_migrate_v5(): void {
+    $add = ['parent_id' => 'INT NULL', 'lot_seq' => 'INT NULL', 'line_closed' => 'INT NULL', 'close_note' => 'TEXT NULL',
+        'i_scope' => 'VARCHAR(10) NULL', 'i_bulk_mode' => 'VARCHAR(10) NULL', 'i_aql_major' => 'VARCHAR(10) NULL', 'i_defined_qty' => 'INT NULL'];
+    foreach ($add as $c => $def) { try { db()->query("SELECT $c FROM qc_items LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE qc_items ADD COLUMN $c $def"); } }
+    try { db()->exec('CREATE INDEX ' . (is_sqlite() ? 'IF NOT EXISTS ' : '') . 'ix_qc_items_parent_id ON qc_items(parent_id)'); } catch (Throwable $e) {}
+    // master / reference image (from Excel, request form or on-site creation) is its own kind, so inspectors cannot replace or delete it
+    q("UPDATE item_photos SET kind='ref' WHERE kind='product' AND remark IN ('From Excel', 'On-site', 'Reference')");
+    set_setting('lock_inspected_quantity', '0');
+    set_setting('import_one_job_per_design', '1');
+    set_setting('require_defect_photo', '0');
+    set_setting('schema_version', '5');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

@@ -20,7 +20,7 @@ export default function Reports() {
           {opts.data && r !== 'vendor' && <div><label>Vendor</label><Sel value={f.vendor} onChange={set('vendor')} options={opts.data.vendors.map((c) => [c.id, c.name])} blank="All" /></div>}
           {opts.data?.inspectors && <div><label>Inspector</label><Sel value={f.insp} onChange={set('insp')} options={opts.data.inspectors.map((c) => [c.id, c.label])} blank="All" /></div>}
           <div><label>PO / SKU / report</label><input type="search" value={f.q || ''} onChange={set('q')} placeholder="Any" /></div>
-          <div><label>Result</label><Sel value={f.res} onChange={set('res')} options={[['PASS', 'Pass'], ['FAIL', 'Fail'], ['CONDITIONAL', 'Conditional']]} blank="All" /></div>
+          <div><label>Result</label><Sel value={f.res} onChange={set('res')} options={[['PASS', 'Pass'], ['FAIL', 'Fail'], ['CONDITIONAL', 'Conditional'], ['NOTPASS', 'Fail + conditional']]} blank="All" /></div>
           <div><label>From</label><input type="date" value={f.from || d.filters.from} onChange={set('from')} /></div><div><label>To</label><input type="date" value={f.to || d.filters.to} onChange={set('to')} /></div>
           <button className="btn pri">Search</button>
         </form>

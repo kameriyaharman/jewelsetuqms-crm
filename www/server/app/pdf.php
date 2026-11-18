@@ -54,7 +54,7 @@ function rpt_header(string $title, string $mode, string $no, string $state): str
 function bar(string $t): string { return '<table class="bar"><tr><td>' . h($t) . '</td></tr></table>'; }
 function img_src(?string $path): ?string { if (!$path) return null; $f = UPLOAD_DIR . '/' . $path; return is_file($f) && preg_match('/\.(jpe?g|png)$/i', $f) ? $f : null; }
 function product_image(array $it): ?string {
-    $p = val("SELECT path FROM item_photos WHERE item_id=? AND kind='product' ORDER BY id LIMIT 1", [$it['id']]);
+    $p = val("SELECT path FROM item_photos WHERE item_id=? AND kind IN ('product','ref') ORDER BY CASE kind WHEN 'product' THEN 0 ELSE 1 END, id LIMIT 1", [$it['id']]);
     if ($f = img_src($p)) return $f;
     foreach (all('SELECT path FROM attachments WHERE item_id=? OR (job_id=? AND item_id IS NULL) ORDER BY item_id DESC, id', [$it['id'], $it['job_id']]) as $a) if ($f = img_src($a['path'])) return $f;
     return null;
@@ -130,7 +130,8 @@ function pdf_render(string $html, bool $land, ?string $saveTo = null): string {
 
 /* ===================================================================== SINGLE DESIGN */
 function item_pdf(int $itemId, bool $save = false): array {
-    $it = one('SELECT * FROM qc_items WHERE id=?', [$itemId]); $job = job_load((int)$it['job_id']);
+    $it = one('SELECT * FROM qc_items WHERE id=?', [$itemId]); $job0 = job_load((int)$it['job_id']); $job = item_job($job0, $it);
+    $L = line_stats($job0, line_root_id($it)); $multiLot = $L['lots'] > 1 || !$L['complete'];
     $S = item_stats($it); $res = $it['final_result'] ?: ($it['system_result'] ?: 'PENDING');
     $thr = client_threshold((int)$job['client_id']); $thrT = rtrim(rtrim(number_format($thr, 1), '0'), '.');
     $aql = $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL'; $plan = jdec($it['plan_json']);
@@ -172,6 +173,7 @@ function item_pdf(int $itemId, bool $save = false): array {
  <tr><td class="lab">QC Inspector Name / ID</td><td class="val"><?= h($job['inspector_code'] . ' · ' . $job['inspector_name']) ?></td><td class="lab">Pass / Fail Rule</td><td class="val" style="color:#1f2937"><?= h(result_rule_text($job)) ?></td></tr>
  <tr><td class="lab">Production Batch / Lot No.</td><td class="val"><?= h($it['lot_no'] ?: '—') ?></td><td class="lab">XRF Machine Used</td><td class="val"><?= h($it['xrf_machine'] ?: '—') ?></td></tr>
  <tr><td class="lab">QC Job No.</td><td class="val"><?= h($job['job_no']) ?></td><td class="lab">GPS / Start Time</td><td class="val" style="font-weight:normal"><?= h($it['gps'] ?: '—') ?></td></tr>
+<?php if ($multiLot): ?> <tr><td class="lab">QC Lot / Session</td><td class="val" colspan="3">Lot <?= (int)($it['lot_seq'] ?: 1) ?> of <?= $L['lots'] ?> · This session: offered <?= num($it['ready_qty']) ?>, accepted <?= num($it['accepted_qty']) ?> · Cumulative accepted <?= num($L['accepted']) ?> / <?= num($L['order']) ?> · Pending <?= num($L['pending']) ?><?= $L['closed'] ? ' · FORCE CLOSED' : '' ?></td></tr><?php endif; ?>
 <?php if (trim((string)($it['spec_detail'] ?? '')) !== ''): ?> <tr><td class="lab">Stone / Spec Detail</td><td class="val" colspan="3" style="font-weight:normal"><?= nl2br(h($it['spec_detail'])) ?></td></tr><?php endif; ?>
 <?php if (trim((string)($it['instructions'] ?? '')) !== ''): ?> <tr><td class="lab">Client Instructions</td><td class="val" colspan="3" style="font-weight:normal"><?= nl2br(h($it['instructions'])) ?></td></tr><?php endif; ?>
 </table></div>
@@ -255,13 +257,20 @@ function item_pdf(int $itemId, bool $save = false): array {
 
 /* ===================================================================== MULTI-DESIGN PO */
 function job_pdf(int $jobId, bool $save = false): array {
-    $job = job_load($jobId); $items = all('SELECT * FROM qc_items WHERE job_id=? ORDER BY id', [$jobId]);
+    $job = job_load($jobId); $gids = po_group_ids($job); $in = implode(',', $gids);
+    $items = all("SELECT * FROM qc_items WHERE job_id IN ($in) ORDER BY job_id, COALESCE(parent_id, id), COALESCE(lot_seq, 1), id");
+    $gjobs = all("SELECT * FROM qc_jobs WHERE id IN ($in) ORDER BY id"); $jmap = array_column($gjobs, null, 'id');
+    $lines = []; foreach ($items as $i) if (!$i['parent_id']) $lines[] = line_stats($jmap[$i['job_id']], (int)$i['id']);
+    $notDone = count(array_filter($gjobs, fn($g) => !in_array($g['status'], ['APPROVED', 'EMAILED', 'CLOSED'], true)));
+    $jobNos = array_values(array_filter(array_column($gjobs, 'job_no')));
+    $jobLbl = count($jobNos) > 1 ? count($jobNos) . ' job cards: ' . (count($jobNos) > 4 ? $jobNos[0] . ' … ' . end($jobNos) : implode(', ', $jobNos)) : ($job['job_no'] ?? '');
+    $hasLots = count($items) > count($lines) || array_filter($lines, fn($l) => !$l['complete'] || $l['closed']);
     $thr = client_threshold((int)$job['client_id']); $thrT = rtrim(rtrim(number_format($thr, 1), '0'), '.');
     $aql = $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL';
     $no = po_report_no($job);
     $T = ['po' => 0, 'off' => 0, 'insp' => 0, 'acc' => 0, 'rej' => 0, 'C' => 0, 'M' => 0, 'm' => 0]; $st = []; $pass = $fail = $cond = 0;
     foreach ($items as $i) { $s = item_stats($i); $st[$i['id']] = $s;
-        $T['po'] += $i['order_qty']; $T['off'] += $i['ready_qty']; $T['insp'] += $i['inspected_qty']; $T['acc'] += $i['accepted_qty']; $T['rej'] += $i['rejected_qty'];
+        if (!$i['parent_id']) $T['po'] += $i['order_qty']; $T['off'] += $i['ready_qty']; $T['insp'] += $i['inspected_qty']; $T['acc'] += $i['accepted_qty']; $T['rej'] += $i['rejected_qty'];
         $T['C'] += $s['sev']['CRITICAL']; $T['M'] += $s['sev']['MAJOR']; $T['m'] += $s['sev']['MINOR'];
         $r = $i['final_result'] ?: $i['system_result']; if ($r === 'PASS') $pass++; elseif ($r === 'FAIL') $fail++; elseif ($r === 'CONDITIONAL') $cond++; }
     $n = count($items); $rate = $T['insp'] ? $T['rej'] * 100 / $T['insp'] : 0;
@@ -296,10 +305,10 @@ function job_pdf(int $jobId, bool $save = false): array {
     $xrfAll = in_array('NOT OK', array_column($st, 'xrf'), true) ? 'NOT OK' : 'OK';
     ob_start(); ?>
 <html><head><meta charset="utf-8"><?= rpt_css(true) ?></head><body>
-<?= rpt_header(report_title($job), 'MULTI-DESIGN PO REPORT', $no, in_array($job['status'], ['APPROVED', 'EMAILED', 'CLOSED'], true) ? 'APPROVED · ALL DESIGNS LOCKED' : 'DRAFT — REVIEW IN PROGRESS') ?>
+<?= rpt_header(report_title($job), 'MULTI-DESIGN PO REPORT', $no, $notDone ? ('PARTIAL — ' . (count($gjobs) - $notDone) . ' OF ' . count($gjobs) . ' JOB CARDS COMPLETE') : (in_array($job['status'], ['APPROVED', 'EMAILED', 'CLOSED'], true) ? 'APPROVED · ALL DESIGNS LOCKED' : ($job['status'] === 'PARTIAL' ? 'PARTIAL QC DONE — JOB OPEN' : 'DRAFT — REVIEW IN PROGRESS'))) ?>
 <div><?= bar('1. PURCHASE ORDER (PO) & INSPECTION HEADER DETAILS') ?>
 <table>
- <tr><td class="lab">Inspection Date</td><td class="val"><?= fdate($insDate, 'd-M-Y') ?></td><td class="lab">Inspection Type</td><td class="val"><?= in_array(1, array_map('intval', array_column($items, 'reinspection')), true) ? 'RE-INSPECTION' : 'REGULAR' ?></td><td class="lab">QC Job No.</td><td class="val"><?= h($job['job_no']) ?></td></tr>
+ <tr><td class="lab">Inspection Date</td><td class="val"><?= fdate($insDate, 'd-M-Y') ?></td><td class="lab">Inspection Type</td><td class="val"><?= in_array(1, array_map('intval', array_column($items, 'reinspection')), true) ? 'RE-INSPECTION' : 'REGULAR' ?></td><td class="lab">QC Job No.</td><td class="val"><?= h($jobLbl) ?></td></tr>
  <tr><td class="lab">Client Name</td><td class="val"><?= h(strtoupper($job['client_name'])) ?></td><td class="lab">Vendor / Factory Unit</td><td class="val"><?= h(strtoupper($job['vendor_name'])) ?></td><td class="lab">Factory Location</td><td class="val"><?= h(strtoupper((string)val('SELECT location FROM vendors WHERE id=?', [$job['vendor_id']]))) ?></td></tr>
  <tr><td class="lab">PO Number</td><td class="val"><?= h($job['po_no']) ?></td><td class="lab">Metal &amp; Plating Spec</td><td class="val"><?= h($metal) ?></td><td class="lab">Master Sample Ref.</td><td class="val"><?= h(($first['master_sample'] ?? '') ?: 'Approved Master Sample Available') ?></td></tr>
  <tr><td class="lab">Total Designs in PO</td><td class="val"><?= $n ?></td><td class="lab">QC Inspector ID</td><td class="val"><?= h($job['inspector_code'] . ' · ' . $job['inspector_name']) ?></td><td class="lab">Product Fail Rule</td><td class="val" style="color:#1f2937"><?= h(result_rule_text($job)) ?></td></tr>
@@ -321,8 +330,8 @@ function job_pdf(int $jobId, bool $save = false): array {
 <div class="sec" style="page-break-inside:auto"><?= bar('3. DESIGN-WISE INSPECTION BREAKDOWN (WITH ACTUAL PRODUCT IMAGE & ' . ($aql ? 'AQL RULE' : $thrT . '% FAIL RULE') . ')') ?>
 <table class="th zebra"><tr><th>Sr.</th><th style="width:62px">Actual Product Image</th><th>Design No. / SKU</th><th>Category</th><th>PO Qty</th><th>Offered Qty</th><th>Inspected</th><th>Accepted Qty</th><th>Reject / Repair</th><th>Rej/Rep %</th><th>Critical</th><th>Major</th><th>Minor</th><th>XRF Micron</th><th style="width:20%">Primary Defect / QC Remarks</th><th>Product Status</th></tr>
 <?php foreach ($items as $x => $i): $s = $st[$i['id']]; $r = $i['final_result'] ?: ($i['system_result'] ?: 'PENDING'); $img = product_image($i); ?>
- <tr><td class="c"><?= $x + 1 ?></td><td class="c" style="padding:2px"><?= $img ? '<img src="' . h($img) . '" style="width:56px;height:44px">' : '<span class="na">—</span>' ?></td><td class="c"><b><?= h($i['sku']) ?></b><?= $i['style_ref'] ? '<br><span class="na" style="font-weight:normal">' . h($i['style_ref']) . '</span>' : '' ?></td>
-  <td class="c"><?= h($i['product']) ?></td><td class="c"><?= num($i['order_qty']) ?></td><td class="c"><?= num($i['ready_qty']) ?></td><td class="c"><?= num($i['inspected_qty']) ?></td><td class="c"><?= num($i['accepted_qty']) ?></td><td class="c"><b><?= num($i['rejected_qty']) ?></b></td>
+ <tr><td class="c"><?= $x + 1 ?></td><td class="c" style="padding:2px"><?= $img ? '<img src="' . h($img) . '" style="width:56px;height:44px">' : '<span class="na">—</span>' ?></td><td class="c"><b><?= h($i['sku']) ?></b><?= $hasLots ? '<br><span class="na" style="font-weight:normal">Lot ' . (int)($i['lot_seq'] ?: 1) . ($i['insp_date'] ? ' · ' . fdate($i['insp_date'], 'd-M') : '') . '</span>' : '' ?><?= $i['style_ref'] ? '<br><span class="na" style="font-weight:normal">' . h($i['style_ref']) . '</span>' : '' ?></td>
+  <td class="c"><?= h($i['product']) ?></td><td class="c"><?= $i['parent_id'] ? '<span class="na">↳</span>' : num($i['order_qty']) ?></td><td class="c"><?= num($i['ready_qty']) ?></td><td class="c"><?= num($i['inspected_qty']) ?></td><td class="c"><?= num($i['accepted_qty']) ?></td><td class="c"><b><?= num($i['rejected_qty']) ?></b></td>
   <td class="c"><b><?= number_format($s['rate'], 1) ?>%</b></td><td class="c"><?= $s['sev']['CRITICAL'] ?></td><td class="c"><?= $s['sev']['MAJOR'] ?></td><td class="c"><?= $s['sev']['MINOR'] ?></td>
   <td class="c <?= rpt_status_css($s['xrf']) ?>"><?= $s['xrf'] ?></td><td><?= h($i['rejected_qty'] ? $s['primary'] . ' (' . $i['rejected_qty'] . ' pcs)' : 'All pcs passed check') ?><?= $r === 'CONDITIONAL' && $i['concession_status'] ? '<br>Concession: ' . h($i['concession_status']) : '' ?></td>
   <td class="c <?= rpt_status_css($r) ?>"><?= h($r === 'CONDITIONAL' ? 'COND. PASS' : $r) ?></td></tr>
@@ -331,6 +340,16 @@ function job_pdf(int $jobId, bool $save = false): array {
   <td class="c"><?= $T['C'] ?></td><td class="c"><?= $T['M'] ?></td><td class="c"><?= $T['m'] ?></td><td class="c <?= rpt_status_css($xrfAll) ?>"><?= $xrfAll ?></td>
   <td><?= $pass + $cond ?> Passed / <?= $fail ?> Failed (<?= $aql ? 'AQL' : '>=' . $thrT . '% rule' ?>)</td><td class="c <?= rpt_status_css($fail ? 'FAIL' : 'PASS') ?>"><?= $fail ? 'FAIL' : 'PASS' ?></td></tr>
 </table></div>
+<?php if ($hasLots): ?>
+<div class="sec"><?= bar('3A. SKU-WISE CONSOLIDATED SUMMARY — ORDER vs CUMULATIVE ACCEPTED (ALL QC LOTS)') ?>
+<table class="th zebra"><tr><th>Design No. / SKU</th><th>Order Qty</th><th>QC Lots</th><th style="width:34%">Lot-wise Log (Date · Offered → Accepted / Rej)</th><th>Cumulative Accepted</th><th>Pending</th><th>SKU Status</th></tr>
+<?php foreach ($lines as $l): $stTxt = $l['closed'] ? 'FORCE CLOSED' : ($l['complete'] ? 'COMPLETE' : 'PARTIAL QC DONE (OPEN)'); ?>
+ <tr><td class="c"><b><?= h($l['sku']) ?></b></td><td class="c"><?= num($l['order']) ?></td><td class="c"><?= $l['lots'] ?></td>
+  <td><?= implode('<br>', array_map(fn($g) => 'Lot ' . $g['lot'] . ' · ' . ($g['date'] ? fdate($g['date'], 'd-M') : '—') . ' · ' . num($g['ready']) . ' → ' . num($g['counted']) . ' OK / ' . num($g['rejected']) . ' rej' . ($g['status'] !== 'APPROVED' ? ' (in QC)' : ''), $l['log'])) ?></td>
+  <td class="c ok"><b><?= num($l['accepted']) ?> / <?= num($l['order']) ?></b></td><td class="c <?= $l['pending'] ? 'nok' : '' ?>"><b><?= num($l['pending']) ?></b></td><td class="c <?= $l['complete'] ? 'ok' : 'nok' ?>"><?= $stTxt ?><?= $l['closed'] && $l['close_note'] ? '<br><span class="na">' . h($l['close_note']) . '</span>' : '' ?></td></tr>
+<?php endforeach ?>
+</table></div>
+<?php endif; ?>
 
 <div class="sec"><?= bar('4. ON-SITE PHYSICAL & RELIABILITY TESTS (PO BATCH LEVEL)') ?>
 <table class="th zebra"><tr><th style="width:34%">Test Parameter</th><th>Sample Tested (Pcs)</th><th>Test Result</th><th style="width:42%">Method / QC Remarks</th></tr>
@@ -373,6 +392,6 @@ function job_pdf(int $jobId, bool $save = false): array {
     $fname = file_safe($no) . '.pdf';
     $file = $save ? UPLOAD_DIR . '/reports/' . $fname : null;
     $pdf = pdf_render($html, true, $file);
-    if ($file) q('UPDATE qc_jobs SET po_pdf=? WHERE id=?', ['reports/' . $fname, $jobId]);
+    if ($file) q("UPDATE qc_jobs SET po_pdf=? WHERE id IN ($in)", ['reports/' . $fname]);
     return [$pdf, $fname, $file];
 }

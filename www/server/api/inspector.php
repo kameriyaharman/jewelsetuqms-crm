@@ -16,8 +16,8 @@ api('GET', 'app/home', ['inspector'], function () {
        (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')) done,
        (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status='RETURNED') ret, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.status='HOLD') hold
        FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
-       WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')
-       ORDER BY CASE WHEN j.status='RETURNED' THEN 0 WHEN j.status='IN_PROGRESS' THEN 1 ELSE 2 END, j.scheduled_date", [$me['id'], $me['id']]);
+       WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED','PARTIAL')
+       ORDER BY CASE WHEN j.status='RETURNED' THEN 0 WHEN j.status='IN_PROGRESS' THEN 1 WHEN j.status='PARTIAL' THEN 3 ELSE 2 END, j.scheduled_date", [$me['id'], $me['id']]);
     $skus = all("SELECT " . img_item_sql() . " img, i.id, i.sku, i.product, i.ready_qty, i.status, j.job_no FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')", [$me['id'], $me['id']]);
     return ['jobs' => $jobs, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('PENDING','IN_PROGRESS','HOLD','RETURNED','COMPLETED') AND j.status NOT IN ('CANCELLED','CLOSED')", [$me['id'], $me['id']]),
@@ -26,7 +26,9 @@ api('GET', 'app/home', ['inspector'], function () {
 api('GET', 'app/job', ['inspector'], function () {
     $job = job_load((int)in_('id')); if (!$job || !my_job($job)) fail('Job not found', 404);
     $job['scope_label'] = scope_label($job);
-    return ['job' => $job, 'items' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.instructions FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']]),
+    $lines = []; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$job['id']]) as $x) { $L = line_stats($job, (int)$x['id']); unset($L['log']); $lines[$x['id']] = $L; }
+    return ['job' => $job, 'lines' => $lines, 'can_lot' => flag('inspector_new_job') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
+        'items' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.instructions, i.parent_id, i.lot_seq FROM qc_items i WHERE i.job_id=? ORDER BY COALESCE(i.parent_id, i.id), COALESCE(i.lot_seq, 1), i.id', [$job['id']]),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=?', [$job['id']])),
         'can_add' => flag('inspector_new_job') && in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], true)];
 });
@@ -34,7 +36,7 @@ api('GET', 'app/inspect', ['inspector', 'super_admin'], function () {
     $it = one('SELECT * FROM qc_items WHERE id=?', [(int)in_('item')]); $job = $it ? job_load((int)$it['job_id']) : null;
     $admin = is_role('super_admin');
     if (!$job || (!$admin && !my_job($job))) fail('SKU not found in your jobs', 404);
-    $job['scope_label'] = scope_label($job);
+    $job = item_job($job, $it); $job['scope_label'] = scope_label($job);
     $editable = item_editable($it, $job);
     $cpm = all("SELECT * FROM checkpoints WHERE (client_id IS NULL OR client_id=?) AND (category IS NULL OR category=? OR category='') ORDER BY sort, id", [$job['client_id'], $it['product']]);
     $remarks = []; foreach ($cpm as $c) $remarks[$c['name']] = ['PASS' => $c['pass_remark'], 'FAIL' => $c['fail_remark'], 'NA' => $c['na_remark']];
@@ -48,11 +50,12 @@ api('GET', 'app/inspect', ['inspector', 'super_admin'], function () {
             ['param' => 'Thickness', 'spec' => $n($it['thickness']), 'tol' => '0.1', 'unit' => 'mm', 'qty' => 2, 'actual' => '', 'result' => '']]; }
     $dm = []; foreach (all('SELECT d.name, d.severity, c.name cat FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name') as $d) $dm[$d['cat']][] = ['n' => $d['name'], 's' => $d['severity']];
     $it['img'] = item_img((int)$it['id']);
-    return ['item' => $it, 'job' => $job, 'editable' => $editable, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'remarks' => $remarks,
+    $line = line_stats(job_load((int)$it['job_id']), line_root_id($it));
+    return ['item' => $it, 'line' => $line, 'job' => $job, 'editable' => $editable, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'remarks' => $remarks,
         'defects' => all('SELECT category, type, severity, qty, remark FROM item_defects WHERE item_id=?', [$it['id']]),
-        'photos' => array_map(fn($p) => ['id' => (int)$p['id'], 'kind' => $p['kind'], 'remark' => $p['remark'], 'url' => url('file', ['p' => $p['path']])], all('SELECT * FROM item_photos WHERE item_id=? ORDER BY id', [$it['id']])),
+        'photos' => array_map(fn($p) => ['id' => (int)$p['id'], 'kind' => $p['kind'], 'remark' => $p['remark'], 'url' => url('file', ['p' => $p['path']])], all("SELECT * FROM item_photos WHERE kind<>'ref' AND item_id=? ORDER BY id", [$it['id']])),
         'dm' => $dm, 'plan' => jdec($it['plan_json']), 'steps' => array_values(STEPS), 'threshold' => client_threshold((int)$job['client_id']),
-        'aql' => $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL', 'locked_qty' => $job['scope'] !== 'SAMPLE',
+        'aql' => $job['scope'] === 'BULK' && $job['bulk_mode'] === 'AQL', 'locked_qty' => flag('lock_inspected_quantity') && $job['scope'] !== 'SAMPLE' && !$admin,
         'need_photo' => flag('require_defect_photo'), 'gps' => flag('gps_on_inspection_start'),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=? AND (item_id IS NULL OR item_id=?)', [$job['id'], $it['id']])),
         'siblings' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.status FROM qc_items i WHERE i.job_id=? ORDER BY i.id', [$job['id']]),
@@ -72,7 +75,7 @@ $in = inp();
 $act = (string)($in['action'] ?? '');
 $it = one('SELECT * FROM qc_items WHERE id=?', [(int)($in['item_id'] ?? 0)]);
 if (!$it) fail('Item not found', 404);
-$job = job_load((int)$it['job_id']);
+$job = item_job(job_load((int)$it['job_id']), $it);
 $me = user(); $admin = is_role('super_admin');
 if (!$admin && !my_job($job)) fail('Not your job', 403);
 if (!$admin && !in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], true)) fail('Job is not open for inspection (' . $job['status'] . ')', 409);
@@ -101,9 +104,10 @@ case 'save':
         foreach (['lot_no', 'xrf_machine', 'master_sample'] as $k) if (isset($D[$k])) $up[$k] = mb_substr(trim((string)$D[$k]), 0, 120); }
     if ($s === 2) {
         $insp = (int)($D['inspected_qty'] ?? 0); $acc = (int)($D['accepted_qty'] ?? 0); $rej = (int)($D['rejected_qty'] ?? 0);
-        $locked = !($job['scope'] === 'SAMPLE');
+        $locked = flag('lock_inspected_quantity') && $job['scope'] !== 'SAMPLE';
         if ($locked && !$admin) $insp = (int)$it['insp_qty'];
         if ($insp <= 0) json_out(['error' => 'Inspection quantity must be more than 0'], 422);
+        if ($insp !== (int)$it['inspected_qty'] && $insp !== (int)$it['insp_qty']) audit('item', (int)$it['id'], 'UPDATE', 'Inspected qty', $it['inspected_qty'] ?: $it['insp_qty'], $insp, (int)$it['rev']);
         if ($insp > (int)$it['ready_qty'] && !$job['allow_excess']) json_out(['error' => 'Inspection qty cannot exceed Ready qty'], 422);
         if (setting('block_qty_mismatch', '1') === '1' && $acc + $rej !== $insp) json_out(['error' => "Accepted + Rejected (" . ($acc + $rej) . ") ≠ Inspected ($insp). Please check before proceeding."], 422);
         $up += ['inspected_qty' => $insp, 'accepted_qty' => $acc, 'rejected_qty' => $rej];
@@ -183,7 +187,8 @@ case 'photo':
 case 'photo_delete':
     if (!$editable) json_out(['error' => 'Read-only'], 409);
     $ph = one('SELECT * FROM item_photos WHERE id=? AND item_id=?', [(int)($in['photo_id'] ?? 0), $it['id']]);
-    if ($ph) { @unlink(UPLOAD_DIR . '/' . $ph['path']); q('DELETE FROM item_photos WHERE id=?', [$ph['id']]); }
+    if ($ph && $ph['kind'] === 'ref') json_out(['error' => 'The reference / master product image is read-only for inspection. Back Office, QC Manager or Super Admin can change it via Edit design.'], 403);
+    if ($ph) { if (!(int)val('SELECT COUNT(*) FROM item_photos WHERE path=? AND id<>?', [$ph['path'], $ph['id']])) @unlink(UPLOAD_DIR . '/' . $ph['path']); q('DELETE FROM item_photos WHERE id=?', [$ph['id']]); }
     json_out(['ok' => true]);
 
 case 'hold':
@@ -250,7 +255,7 @@ function add_onsite_items(array $job, array $rows): array {
             'stamping' => (string)($r['stamping'] ?? ''), 'style_ref' => (string)($r['style_ref'] ?? ''), 'stone_setting' => (string)($r['stone_setting'] ?? ''), 'instructions' => (string)($r['instructions'] ?? ''),
             'master_sample' => 'Approved Master Sample Available', 'order_qty' => $order, 'ready_qty' => $ready, 'insp_qty' => $plan['insp_qty'], 'plan_json' => json_encode($plan['plan']),
             'status' => 'PENDING', 'updated_at' => now()]);
-        if (!empty($r['img']) && ($p = save_data_image((string)$r['img'], 'photos'))) insert('item_photos', ['item_id' => $iid, 'kind' => 'product', 'path' => $p, 'remark' => 'On-site', 'created_at' => now()]);
+        if (!empty($r['img']) && ($p = save_data_image((string)$r['img'], 'photos'))) insert('item_photos', ['item_id' => $iid, 'kind' => 'ref', 'path' => $p, 'remark' => 'On-site', 'created_at' => now()]);
         audit('item', $iid, 'CREATE', 'source', null, 'Inspector on-site');
         $ids[] = $iid;
     }
@@ -266,6 +271,14 @@ api('GET', 'app/newjob', ['inspector'], function () {
 api('POST', 'app/newjob', ['inspector'], function () {
     if (!flag('inspector_new_job')) fail('Creating jobs on site is switched off. Ask Super Admin.', 403);
     $me = user(); $in = inp();
+    // next QC lot / re-inspection of an existing SKU line in my job
+    if ($lot = (int)($in['lot_of'] ?? 0)) {
+        $r = one('SELECT * FROM qc_items WHERE id=?', [$lot]); $job = $r ? job_load((int)$r['job_id']) : null;
+        if (!$job || !my_job($job)) fail('SKU not found in your jobs', 404);
+        $nid = add_lot($lot, (int)($in['ready_qty'] ?? 0), today());
+        notify_managers($job, "QC lot added on site by {$me['emp_code']} · {$r['sku']} · {$job['job_no']}", 'request/' . $job['id']);
+        return ['ok' => true, 'job_id' => (int)$job['id'], 'first' => $nid, 'message' => 'New QC lot created — specs copied, enter today\'s quantities.'];
+    }
     // add SKUs to one of my open jobs
     if ($jid = (int)($in['job_id'] ?? 0)) {
         $job = job_load($jid); if (!$job || !my_job($job)) fail('Job not found', 404);

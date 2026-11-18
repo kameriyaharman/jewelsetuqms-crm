@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { fileUrl, get } from './api';
 import { JOB_STATUS, ITEM_STATUS, num } from './util';
@@ -46,8 +47,9 @@ export function Badge({ s, label }) {
   return <span className={'badge b-' + cls}>{String(l).toUpperCase()}</span>;
 }
 export const Result = ({ r }) => <Badge s={r} label={r === 'CONDITIONAL' ? 'Conditional' : r} />;
-export function Kpi({ label, value, sub, tone = '', icon = 'box' }) {
-  return <div className={'kpi ' + tone}><div className="kic"><Icon n={icon} /></div><div><small>{label}</small><b>{value}</b>{sub ? <span>{sub}</span> : null}</div></div>;
+export function Kpi({ label, value, sub, tone = '', icon = 'box', to }) {
+  const inner = <><div className="kic"><Icon n={icon} /></div><div><small>{label}</small><b>{value}</b>{sub ? <span>{sub}</span> : null}</div></>;
+  return to ? <Link to={to} className={'kpi click ' + tone}>{inner}</Link> : <div className={'kpi ' + tone}>{inner}</div>;
 }
 export function Bars({ data, suffix = '%' }) {
   const vals = Object.values(data || {}); const max = Math.max(0.0001, ...vals);

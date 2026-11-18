@@ -5,7 +5,7 @@ import { post } from '../app/api';
 import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdate, num } from '../app/util';
 
-const TABS = [['ALL', 'All'], ['REQUESTED', 'Requested'], ['DRAFT', 'Draft'], ['SCHEDULED', 'Scheduled'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['SUBMITTED', 'Submitted'], ['APPROVED', 'Approved'], ['EMAILED', 'Reported'], ['CLOSED', 'Closed']];
+const TABS = [['ALL', 'All'], ['REQUESTED', 'Requested'], ['DRAFT', 'Draft'], ['SCHEDULED', 'Scheduled'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['SUBMITTED', 'Submitted'], ['APPROVED', 'Approved'], ['PARTIAL', 'Partial QC (open)'], ['EMAILED', 'Reported'], ['CLOSED', 'Closed']];
 
 export default function Requests() {
   const { me, refresh } = useAuth(); const r = me.user.role; const internal = ['super_admin', 'back_office', 'qc_manager'].includes(r);

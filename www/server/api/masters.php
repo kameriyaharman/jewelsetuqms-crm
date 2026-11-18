@@ -7,11 +7,13 @@ api('GET', 'dashboard', R_INT, function () {
     $prev = sum_items(approved_items(['from' => date('Y-m-01', $pm), 'to' => date('Y-m-t', $pm)]));
     $today = all("SELECT " . img_job_sql() . " img, j.id, j.job_no, j.req_no, j.status, j.time_slot, c.code client_code, v.name vendor_name, u.name insp_name, u.emp_code insp_code, (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id) skus
         FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=j.inspector_id WHERE j.scheduled_date=? AND j.status<>'CANCELLED' ORDER BY j.time_slot", [today()]);
-    $up = all("SELECT j.id, j.status, j.inspector_id, COALESCE(j.scheduled_date, j.requested_date) d, c.code client_code, v.name vendor_name FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
+    $up = all("SELECT j.id, j.job_no, j.req_no, j.po_no, j.status, j.inspector_id, COALESCE(j.scheduled_date, j.requested_date) d, c.code client_code, v.name vendor_name FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
         WHERE (j.scheduled_date>? OR (j.scheduled_date IS NULL AND j.requested_date>=?)) AND j.status IN ('REQUESTED','SCHEDULED','ASSIGNED') ORDER BY COALESCE(j.scheduled_date,j.requested_date) LIMIT 6", [today(), today()]);
     return ['month' => $month, 'prev' => $prev, 'prev_label' => date('M', $pm), 'month_label' => date('F Y'),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items WHERE status IN ('SUBMITTED','UNDER_REVIEW','RETURNED')"),
         'review' => (int)val("SELECT COUNT(*) FROM qc_items WHERE status IN ('SUBMITTED','UNDER_REVIEW')"),
+        'open_jobs' => (int)val("SELECT COUNT(*) FROM qc_jobs WHERE status='PARTIAL'"),
+        'open_bal' => array_sum(array_map(function ($j) { $p = 0; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$j['id']]) as $x) $p += line_stats($j, (int)$x['id'])['pending']; return $p; }, all("SELECT * FROM qc_jobs WHERE status='PARTIAL'"))),
         'trend' => month_trend(approved_items()), 'today' => $today, 'upcoming' => $up];
 });
 
@@ -149,7 +151,8 @@ const TOGGLES = ['enable_vendor_qc_request' => 'Vendors can raise QC requests fr
     'allow_job_split' => 'Split a large job across two inspectors', 'block_qty_mismatch' => 'Block save if Accepted + Rejected ≠ Inspected',
     'auto_email_on_approve' => 'Auto-email PO report to vendor, client HO & JEWELSETU when all SKUs are approved',
     'qc_manager_role' => 'QC Manager / HOD role active (off = Super Admin reviews, approves and gets manager alerts)',
-    'inspector_new_job' => 'Inspectors can create a new QC job / add SKUs on site', 'inspector_edit_after_submit' => 'Inspector can edit a report after submit (until approved)'];
+    'inspector_new_job' => 'Inspectors can create a new QC job / add SKUs on site',
+    'import_one_job_per_design' => 'Excel import: 1 design (SKU) = 1 job card (PO no. common, PO report merges them)', 'lock_inspected_quantity' => 'Lock inspected qty for inspectors (off = inspector can edit it; Accepted + Rejected must still equal Inspected)', 'inspector_edit_after_submit' => 'Inspector can edit a report after submit (until approved)'];
 api('GET', 'settings', R_INT, function () {
     $t = []; foreach (TOGGLES as $k => $d) $t[] = ['key' => $k, 'label' => $d, 'on' => flag($k)];
     $cats = all('SELECT * FROM defect_categories ORDER BY sort, name');

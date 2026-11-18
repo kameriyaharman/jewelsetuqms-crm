@@ -3,14 +3,26 @@
 
 api('GET', 'jobs', R_INT, function () {
     $f = (string)in_('f', 'ALL');
-    $groups = ['ASSIGNED' => ['ASSIGNED'], 'IN_PROGRESS' => ['IN_PROGRESS'], 'REVIEW' => ['SUBMITTED', 'UNDER_REVIEW', 'RETURNED', 'APPROVED'], 'CLOSED' => ['EMAILED', 'CLOSED']];
+    $groups = ['ASSIGNED' => ['ASSIGNED'], 'IN_PROGRESS' => ['IN_PROGRESS'], 'REVIEW' => ['SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], 'OPEN' => ['PARTIAL'], 'CLOSED' => ['APPROVED', 'EMAILED', 'CLOSED']];
+    $qs = trim((string)in_('q')); $bp = [];
     $base = "FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=j.inspector_id WHERE j.job_no IS NOT NULL AND j.status<>'CANCELLED'";
-    $counts = ['ALL' => (int)val("SELECT COUNT(*) $base"), 'UNASSIGNED' => (int)val("SELECT COUNT(*) $base AND j.inspector_id IS NULL")];
-    foreach ($groups as $k => $g) $counts[$k] = (int)val("SELECT COUNT(*) $base AND j.status IN ('" . implode("','", $g) . "')");
+    if ($qs !== '') { $base .= ' AND (j.po_no LIKE ? OR j.job_no LIKE ? OR v.name LIKE ? OR EXISTS (SELECT 1 FROM qc_items qi WHERE qi.job_id=j.id AND qi.sku LIKE ?))'; $bp = ["%$qs%", "%$qs%", "%$qs%", "%$qs%"]; }
+    if ($ins = (int)in_('insp')) { $base .= ' AND j.inspector_id=?'; $bp[] = $ins; }
+    $counts = ['ALL' => (int)val("SELECT COUNT(*) $base", $bp), 'UNASSIGNED' => (int)val("SELECT COUNT(*) $base AND j.inspector_id IS NULL", $bp)];
+    foreach ($groups as $k => $g) $counts[$k] = (int)val("SELECT COUNT(*) $base AND j.status IN ('" . implode("','", $g) . "')", $bp);
     $w = $base;
     if ($f === 'UNASSIGNED') $w .= ' AND j.inspector_id IS NULL'; elseif (isset($groups[$f])) $w .= " AND j.status IN ('" . implode("','", $groups[$f]) . "')";
-    $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, u.emp_code insp_code, u.name insp_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id) skus $w ORDER BY j.scheduled_date DESC, j.id DESC LIMIT 300");
-    return ['rows' => $rows, 'counts' => $counts];
+    $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, u.emp_code insp_code, u.name insp_name, (SELECT COUNT(*) FROM qc_items i WHERE i.job_id=j.id AND i.parent_id IS NULL) skus,
+        (SELECT MIN(i.sku) FROM qc_items i WHERE i.job_id=j.id) sku1 $w ORDER BY " . ($f === 'OPEN' ? 'j.po_no, j.id' : 'j.scheduled_date DESC, j.id DESC') . " LIMIT 500", $bp);
+    // order vs cumulative accepted vs balance for open / partial / reviewed job cards
+    foreach ($rows as &$r) {
+        if (!in_array($r['status'], ['PARTIAL', 'APPROVED', 'IN_PROGRESS', 'ASSIGNED', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], true)) continue;
+        $o = $a = 0; $lot = null;
+        foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$r['id']]) as $x) { $L = line_stats($r, (int)$x['id']); $o += $L['order']; $a += $L['accepted']; if ($L['can_add_lot'] && !$lot) $lot = ['item_id' => $L['root'], 'sku' => $L['sku'], 'pending' => $L['pending']]; }
+        $r['bal'] = ['order' => $o, 'accepted' => $a, 'pending' => max(0, $o - $a), 'lot' => $lot];
+    }
+    unset($r);
+    return ['rows' => $rows, 'counts' => $counts, 'inspectors' => all("SELECT id, emp_code, name FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code")];
 });
 api('GET', 'jobs/assign', R_INT, function () {
     $job = job_load((int)in_('id')); if (!$job) fail('Not found', 404);
@@ -46,7 +58,7 @@ api('GET', 'review', ['super_admin', 'qc_manager'], function () {
 });
 function review_payload(int $id): array {
     $it = one('SELECT * FROM qc_items WHERE id=?', [$id]); if (!$it) fail('Not found', 404); $it['img'] = item_img($id);
-    $job = job_load((int)$it['job_id']); $job['scope_label'] = scope_label($job); $job['rule'] = result_rule_text($job);
+    $job = item_job(job_load((int)$it['job_id']), $it); $job['scope_label'] = scope_label($job); $job['rule'] = result_rule_text($job);
     $def = all('SELECT * FROM item_defects WHERE item_id=?', [$id]);
     $photos = array_map(fn($p) => $p + ['url' => url('file', ['p' => $p['path']])], all('SELECT * FROM item_photos WHERE item_id=? ORDER BY id', [$id]));
     $checks = jdec($it['checks_json']); $meas = jdec($it['meas_json']); $tests = jdec($it['tests_json']);
@@ -124,7 +136,7 @@ api('GET', 'reports', [...R_INT, 'client', 'vendor'], function () {
     if ($F['client']) { $sql .= ' AND j.client_id=?'; $p[] = $F['client']; }
     if ($F['vendor']) { $sql .= ' AND j.vendor_id=?'; $p[] = $F['vendor']; }
     if ($F['insp']) { $sql .= ' AND j.inspector_id=?'; $p[] = $F['insp']; }
-    if ($F['res']) { $sql .= ' AND i.final_result=?'; $p[] = $F['res']; }
+    if ($F['res'] === 'NOTPASS') $sql .= " AND i.final_result IN ('FAIL','CONDITIONAL')"; elseif ($F['res']) { $sql .= ' AND i.final_result=?'; $p[] = $F['res']; }
     if ($F['q']) { $sql .= ' AND (j.po_no LIKE ? OR i.sku LIKE ? OR i.report_no LIKE ?)'; array_push($p, "%{$F['q']}%", "%{$F['q']}%", "%{$F['q']}%"); }
     if ($F['from']) { $sql .= ' AND i.approved_at>=?'; $p[] = $F['from'] . ' 00:00:00'; }
     if ($F['to']) { $sql .= ' AND i.approved_at<=?'; $p[] = $F['to'] . ' 23:59:59'; }
@@ -184,6 +196,12 @@ function analytics_data(): array {
     $o = ['period' => $period, 'months' => $months, 'stats' => sum_items($items), 'pareto' => defect_pareto(array_column($items, 'id')),
         'trend' => month_trend(array_values($vf ? array_filter($all, fn($i) => $i['vendor_id'] == $vf) : $all)), 'vendors' => $vrows,
         'vendor_opts' => role() === 'client' ? all('SELECT v.id, v.name FROM vendors v JOIN client_vendor m ON m.vendor_id=v.id WHERE m.client_id=?', [$cf]) : all('SELECT id, name FROM vendors ORDER BY name')];
+    $o['skus'] = array_map(fn($i) => ['id' => (int)$i['id'], 'po' => $i['po_no'], 'job_no' => $i['job_no'], 'job_id' => (int)$i['job_id'], 'sku' => $i['sku'], 'lot' => (int)($i['lot_seq'] ?: 1), 'vendor' => $i['vendor_name'], 'client' => $i['client_code'],
+        'date' => substr((string)$i['approved_at'], 0, 10), 'ready' => (int)$i['ready_qty'], 'insp' => (int)$i['inspected_qty'], 'acc' => (int)$i['accepted_qty'], 'rej' => (int)$i['rejected_qty'], 'result' => $i['final_result'], 'report_no' => $i['report_no']], array_reverse($items));
+    $rj = array_values(array_filter($items, fn($i) => (int)$i['rejected_qty'] > 0)); $dmap = [];
+    if ($rj) foreach (all('SELECT item_id, type, severity, qty FROM item_defects WHERE item_id IN (' . implode(',', array_map(fn($i) => (int)$i['id'], $rj)) . ')') as $d) $dmap[$d['item_id']][] = $d['type'] . ' ×' . $d['qty'] . ' (' . strtolower($d['severity']) . ')';
+    $o['rejects'] = array_map(fn($i) => ['id' => (int)$i['id'], 'po' => $i['po_no'], 'sku' => $i['sku'], 'vendor' => $i['vendor_name'], 'insp' => (int)$i['inspected_qty'], 'rej' => (int)$i['rejected_qty'], 'result' => $i['final_result'], 'report_no' => $i['report_no'],
+        'defects' => implode(', ', $dmap[$i['id']] ?? []) ?: '—'], array_reverse($rj));
     if (is_internal()) { $o['inspectors'] = []; foreach (all("SELECT id, name, emp_code FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code") as $u) $o['inspectors'][] = $u + inspector_kpis((int)$u['id']); }
     return $o;
 }
@@ -194,4 +212,28 @@ api('GET', 'analytics/export', [...R_INT, 'client'], function () {
     $o = fopen('php://output', 'w'); fputcsv($o, ['Vendor', 'Client(s)', 'Inspections', 'Pass', 'Fail', 'Conditional', 'Inspected pcs', 'Rejected pcs', 'Rejection %', 'Top defect'], ',', '"', '\\');
     foreach ($d['vendors'] as $r) fputcsv($o, [$r['vendor'], $r['clients'], $r['n'], $r['pass'], $r['fail'], $r['cond'], $r['insp'], $r['rej'], round($r['rate'], 2), $r['top']], ',', '"', '\\');
     exit;
+});
+
+/* ----- bulk assign (single-design job cards from Excel) ----- */
+api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], function () {
+    $ids = array_values(array_unique(array_map('intval', (array)in_('ids', []))));
+    $ins = (int)in_('inspector_id'); $date = in_('date') ?: null;
+    if (!$ids) fail('Select at least one job.');
+    $ip = $ins ? one("SELECT id, name, emp_code FROM users WHERE id=? AND role='inspector' AND status='ACTIVE'", [$ins]) : null;
+    if ($ins && !$ip) fail('Invalid inspector');
+    $done = 0; $skip = []; $pos = [];
+    foreach ($ids as $id) {
+        $job = job_load($id);
+        if (!$job || !in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS', 'PARTIAL'], true)) { $skip[] = $job['job_no'] ?? $id; continue; }
+        $d = ['inspector_id' => $ins ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: (mgr_on() ? null : user()['id'])];
+        if ($date) $d['scheduled_date'] = $date; elseif (!$job['scheduled_date']) $d['scheduled_date'] = $job['requested_date'] ?: today();
+        if (!$job['job_no']) $d['job_no'] = next_job_no();
+        if ($ins && in_array($job['status'], ['REQUESTED', 'SCHEDULED'], true)) $d['status'] = 'ASSIGNED';
+        if (!$ins && $job['status'] === 'ASSIGNED') $d['status'] = 'SCHEDULED';
+        update('qc_jobs', $d, 'id=?', [$id]);
+        audit('job', $id, 'ASSIGNED', 'inspector', $job['inspector_code'], $ip['emp_code'] ?? null);
+        $done++; $pos[$job['po_no']] = true;
+    }
+    if ($ip && $done) notify($ins, "$done QC job(s) assigned to you · PO " . implode(', ', array_keys($pos)) . ($date ? ' · ' . fdate($date) : ''), 'app');
+    return ['ok' => true, 'message' => "$done job(s) " . ($ip ? "assigned to {$ip['emp_code']} · {$ip['name']}" : 'unassigned') . ($skip ? ' · skipped (closed/under review): ' . implode(', ', array_slice($skip, 0, 8)) : '') . '.'];
 });

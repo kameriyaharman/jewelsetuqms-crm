@@ -30,10 +30,17 @@ function approve_item(int $itemId, string $final, string $note, array $deviation
 function finalize_job_if_ready(int $jobId): void {
     $job = job_load($jobId);
     if ($job['status'] !== 'APPROVED') return;
-    q('UPDATE qc_jobs SET approved_at=? WHERE id=?', [now(), $jobId]);
+    if (!$job['approved_at']) q('UPDATE qc_jobs SET approved_at=? WHERE id=?', [now(), $jobId]);
     [, $name, $file] = job_pdf($jobId, true);
+    // PO split into several job cards (one per design): email the consolidated PO report once, when the last card is complete
+    $gids = po_group_ids($job); $in = implode(',', $gids);
+    if ((int)val("SELECT COUNT(*) FROM qc_jobs WHERE id IN ($in) AND status NOT IN ('APPROVED','EMAILED','CLOSED')")) {
+        audit('job', $jobId, 'QC_COMPLETE', 'PO report', null, 'Waiting for other job cards of PO ' . $job['po_no']);
+        return;
+    }
+    if (count($gids) > 1 && (int)val("SELECT COUNT(*) FROM qc_jobs WHERE id IN ($in) AND emailed_at IS NOT NULL AND status IN ('EMAILED','CLOSED')") === count($gids)) return;
     if (setting('auto_email_on_approve', '1') === '1') {
-        $items = all('SELECT * FROM qc_items WHERE job_id=?', [$jobId]);
+        $items = all("SELECT * FROM qc_items WHERE job_id IN ($in)");
         $res = array_column($items, 'final_result');
         $overall = in_array('FAIL', $res, true) ? 'FAIL' : (in_array('CONDITIONAL', $res, true) ? 'CONDITIONAL PASS' : 'PASS');
         $rej = array_sum(array_column($items, 'rejected_qty'));
@@ -41,7 +48,6 @@ function finalize_job_if_ready(int $jobId): void {
         $msg = "Dear Sir/Madam,\n\nPlease find attached the QC inspection report for PO {$job['po_no']} ({$job['vendor_name']}).\nResult: $overall" . ($rej ? " ($rej pcs rejected)" : '') . ".\n\nReport numbers: " . implode(', ', array_column($items, 'report_no'));
         email_report($job, null, $file, $subject, $msg);
     }
-    q("UPDATE qc_jobs SET status='EMAILED', emailed_at=? WHERE id=?", [now(), $jobId]);
-    audit('job', $jobId, 'STATUS', 'status', 'APPROVED', 'EMAILED');
+    foreach (all("SELECT id FROM qc_jobs WHERE id IN ($in) AND status='APPROVED'") as $g) { q("UPDATE qc_jobs SET status='EMAILED', emailed_at=? WHERE id=?", [now(), $g['id']]); audit('job', (int)$g['id'], 'STATUS', 'status', 'APPROVED', 'EMAILED'); }
     notify_job_parties($job, "QC report published · PO {$job['po_no']} · " . ($job['job_no'] ?? ''), 'reports');
 }

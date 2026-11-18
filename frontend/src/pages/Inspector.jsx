@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { MPage } from '../app/Layout';
 import { useAuth } from '../app/auth';
-import { flushQueue, pdfUrl, queue } from '../app/api';
-import { Badge, Empty, Icon, Loader, useApi, Thumb } from '../app/ui';
+import { flushQueue, pdfUrl, queue, post } from '../app/api';
+import { Badge, Empty, Icon, Loader, useApi, Thumb, Modal, useToast } from '../app/ui';
 import { fdate, fdt, initials, num } from '../app/util';
 import { PasswordForm } from './Account';
 
@@ -37,23 +37,33 @@ export function AppHome() {
 
 export function AppJob() {
   const { id } = useParams(); const q = useApi('app/job', { id }); const nav = useNavigate(); const [s, setS] = useState('');
+  const [lot, setLot] = useState(null); const toast = useToast(); const [busy, setBusy] = useState(false);
+  const addLot = async () => { setBusy(true); try { const r = await post('app/newjob', { lot_of: lot.root, ready_qty: lot.ready }); toast(r.message); nav('/app/inspect/' + r.first); } catch (e) { toast(e.message, 'err'); } setBusy(false); };
   return <Loader q={q}>{(d) => { const j = d.job; const first = d.items.find((i) => ['RETURNED', 'IN_PROGRESS', 'PENDING', 'COMPLETED'].includes(i.status));
     return <MPage title={j.job_no} back="/app">
       <div className="mcard"><div className="mgrid2">
         <div><small>Client</small><b>{j.client_code}</b></div><div><small>Vendor</small><b>{j.vendor_name}</b></div>
         <div><small>QC date</small><b>{fdate(j.scheduled_date, 'd-m-Y')} {j.time_slot}</b></div><div><small>Type</small><b>{j.qc_type}</b></div>
-        <div><small>Total SKU</small><b>{d.items.length}</b></div><div><small>Order qty</small><b>{num(d.items.reduce((a, i) => a + +i.order_qty, 0))} pcs</b></div>
+        <div><small>Total SKU</small><b>{d.items.filter((i) => !i.parent_id).length}</b></div><div><small>Order qty</small><b>{num(d.items.filter((i) => !i.parent_id).reduce((a, i) => a + +i.order_qty, 0))} pcs</b></div>
         <div><small>PO</small><b>{j.po_no}</b></div><div><small>Scope</small><b>{j.scope_label}</b></div></div>
         <p className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>📍 {j.location} — {j.vendor_address}</p>
         {j.special_req && <div className="note mt" style={{ fontSize: 12 }}><b>Special:</b> {j.special_req}</div>}
         {!!d.attachments.length && <div className="mt">{d.attachments.map((a) => <a key={a.id} className="pill" target="_blank" rel="noreferrer" href={a.url}>📎 {a.name}</a>)}</div>}
       </div>
       <input type="search" placeholder="Search SKU…" value={s} onChange={(e) => setS(e.target.value)} style={{ marginBottom: 10 }} />
-      <div className="mcard"><b>Product list</b><div className="mlist">{d.items.filter((i) => i.sku.toUpperCase().includes(s.toUpperCase())).map((i) =>
-        <Link key={i.id} to={'/app/inspect/' + i.id}><span className="mitem"><Thumb src={i.img} size={52} alt={i.sku} /><span><b className="mono">{i.sku}</b><small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small></span></span><Badge s={i.status} /></Link>)}</div></div>
+      {j.status === 'PARTIAL' && <div className="note" style={{ background: '#fff1e0', borderColor: '#f0c79a', color: '#8a4310', marginBottom: 10 }}><b>Partial QC done — job open.</b> When the vendor presents the balance or repaired pieces, tap <b>+ Next QC lot</b> on the SKU.</div>}
+      <div className="mcard"><b>Product list</b><div className="mlist">{d.items.filter((i) => i.sku.toUpperCase().includes(s.toUpperCase())).map((i) => { const L = d.lines[i.id]; return <div key={i.id}>
+        <Link to={'/app/inspect/' + i.id}><span className="mitem">{i.parent_id ? <span style={{ width: 52, textAlign: 'center', color: 'var(--mut)' }}>↳</span> : <Thumb src={i.img} size={52} alt={i.sku} />}<span><b className="mono">{i.sku}</b>{(i.parent_id || (L && L.lots > 1)) && <small style={{ display: 'inline' }}> · Lot {i.lot_seq || 1}</small>}<small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small>
+          {L && (L.lots > 1 || !L.complete) && <span className="cum"><span>Order {num(L.order)}</span><span className="ok">OK {num(L.accepted)}</span><span className={L.pending ? 'p' : ''}>Bal {num(L.pending)}</span></span>}</span></span><Badge s={i.status} /></Link>
+        {L && L.can_add_lot && d.can_lot && <button className="bigbtn alt" style={{ margin: '0 0 8px', padding: '9px', fontSize: 13 }} onClick={() => setLot({ root: i.id, sku: i.sku, pending: L.pending, ready: L.pending })}><Icon n="plus" /> NEXT QC LOT / RE-INSPECTION</button>}</div>; })}</div></div>
+      <Modal open={!!lot} title={lot ? 'Next QC lot · ' + lot.sku : ''} onClose={() => setLot(null)}>
+        {lot && <><p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>Balance <b>{num(lot.pending)}</b> pcs. Specs, images and files are already filled — enter how many pieces the vendor presented today (fresh + repaired).</p>
+          <div className="f"><label>Presented / ready qty</label><input type="number" inputMode="numeric" min="1" value={lot.ready} onChange={(e) => setLot({ ...lot, ready: e.target.value })} /></div>
+          <button className="bigbtn gold" disabled={busy || !(+lot.ready > 0)} onClick={addLot}>START LOT</button></>}
+      </Modal>
       {d.can_add && <Link to={'/app/job/' + j.id + '/add'} className="bigbtn alt" style={{ display: 'flex', textDecoration: 'none', marginBottom: 8 }}><Icon n="plus" /> ADD SKU ON SITE</Link>}
       {first ? <button className="bigbtn" onClick={() => nav('/app/inspect/' + first.id)}>{first.status === 'PENDING' ? 'START INSPECTION' : 'CONTINUE · ' + first.sku}</button>
-        : <div className="qtyok" style={{ textAlign: 'center' }}>All SKUs submitted — waiting for review. You can still open a SKU to correct it until it is approved.</div>}
+        : j.status === 'PARTIAL' ? null : <div className="qtyok" style={{ textAlign: 'center' }}>All SKUs submitted — waiting for review. You can still open a SKU to correct it until it is approved.</div>}
     </MPage>; }}</Loader>;
 }
 

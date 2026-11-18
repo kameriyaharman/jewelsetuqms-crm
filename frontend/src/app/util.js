@@ -1,7 +1,7 @@
 export const ROLES = { super_admin: 'Super Admin', back_office: 'Back Office', qc_manager: 'QC Manager', inspector: 'QC Inspector', client: 'Client User', vendor: 'Vendor User' };
 export const INTERNAL = ['super_admin', 'back_office', 'qc_manager'];
 export const JOB_STATUS = { DRAFT: 'Draft', REQUESTED: 'Requested', SCHEDULED: 'Scheduled', ASSIGNED: 'Assigned', IN_PROGRESS: 'In progress', SUBMITTED: 'Submitted',
-  UNDER_REVIEW: 'Under review', RETURNED: 'Returned', APPROVED: 'Approved', EMAILED: 'PDF & emailed', CLOSED: 'Closed', CANCELLED: 'Cancelled' };
+  UNDER_REVIEW: 'Under review', RETURNED: 'Returned', APPROVED: 'Approved', PARTIAL: 'Partial QC done (open)', EMAILED: 'PDF & emailed', CLOSED: 'Closed', CANCELLED: 'Cancelled' };
 export const ITEM_STATUS = { PENDING: 'Pending', IN_PROGRESS: 'In progress', HOLD: 'On hold', COMPLETED: 'Completed', SUBMITTED: 'Submitted', UNDER_REVIEW: 'Under review', RETURNED: 'Returned', APPROVED: 'Approved' };
 export const STEPS = ['General info', 'Quantity', 'Quality checks', 'Measurements', 'On-site tests', 'Defects', 'Photos', 'Final result'];
 

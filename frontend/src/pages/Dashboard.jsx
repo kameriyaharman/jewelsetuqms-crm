@@ -1,37 +1,39 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi, Thumb } from '../app/ui';
 import { fdate, num, pct } from '../app/util';
 
 export default function Dashboard() {
-  const q = useApi('dashboard'); const { me } = useAuth(); const r = me.user.role;
+  const q = useApi('dashboard'); const { me } = useAuth(); const r = me.user.role; const nav = useNavigate();
+  const ms = new Date(); const from = `${ms.getFullYear()}-${String(ms.getMonth() + 1).padStart(2, '0')}-01`; const per = from.slice(0, 7);
   const canCreate = ['super_admin', 'back_office'].includes(r);
   return <Page title="Dashboard" sub={q.data ? 'Overview for ' + q.data.month_label : ''} actions={canCreate && <Link className="btn gold" to="/import"><Icon n="upload" /> Import Excel</Link>}>
     <Loader q={q}>{(d) => { const m = d.month, p = d.prev; const diff = p.rate ? m.rate - p.rate : 0; return <>
-      <div className="grid g4 mb">
-        <Kpi label="Total QC reports" value={num(m.n)} sub="This month" icon="clip" />
-        <Kpi label="Pass" value={num(m.pass)} sub={pct(m.pass, m.n, 0)} tone="ok" icon="check" />
-        <Kpi label="Fail" value={num(m.fail)} sub={pct(m.fail, m.n, 0) + (m.cond ? ` · ${m.cond} conditional` : '')} tone="bad" icon="x" />
-        <Kpi label="Pending" value={num(d.pending)} sub={`${d.review} under review`} tone="warn" icon="clock" />
+      <div className="g5 mb">
+        <Kpi to={`/reports?from=${from}`} label="Total QC reports" value={num(m.n)} sub="This month" icon="clip" />
+        <Kpi to={`/reports?from=${from}&res=PASS`} label="Pass" value={num(m.pass)} sub={pct(m.pass, m.n, 0)} tone="ok" icon="check" />
+        <Kpi to={`/reports?from=${from}&res=NOTPASS`} label="Fail" value={num(m.fail)} sub={pct(m.fail, m.n, 0) + (m.cond ? ` · ${m.cond} conditional` : '')} tone="bad" icon="x" />
+        <Kpi to="/review" label="Pending" value={num(d.pending)} sub={`${d.review} under review`} tone="warn" icon="clock" />
+        <Kpi to="/jobs?f=OPEN" label="Open job cards" value={String(d.open_jobs).padStart(2, '0')} sub={d.open_jobs ? `Partial QC · ${num(d.open_bal)} pcs balance` : 'No pending balance'} tone="gold" icon="clip" />
       </div>
       <div className="grid g3 mb">
-        <Kpi label="Total inspected pcs" value={num(m.insp)} sub="This month" tone="info" icon="box" />
-        <Kpi label="Total rejected / repair" value={num(m.rej)} sub="pcs" tone="bad" icon="alert" />
-        <Kpi label="Rejection %" value={m.rate.toFixed(1) + '%'} sub={p.rate ? `${diff <= 0 ? '↓' : '↑'} ${Math.abs(diff).toFixed(1)}% vs ${d.prev_label}` : ''} tone="gold" icon="chart" />
+        <Kpi to={`/analytics?period=${per}#sku`} label="Total inspected pcs" value={num(m.insp)} sub="This month · SKU-wise breakdown" tone="info" icon="box" />
+        <Kpi to={`/analytics?period=${per}#defects`} label="Total rejected / repair" value={num(m.rej)} sub="pcs · defect analysis" tone="bad" icon="alert" />
+        <Kpi to={`/analytics?period=${per}#vendors`} label="Rejection %" value={m.rate.toFixed(1) + '%'} sub={p.rate ? `${diff <= 0 ? '↓' : '↑'} ${Math.abs(diff).toFixed(1)}% vs ${d.prev_label}` : 'Vendor-wise breakdown'} tone="gold" icon="chart" />
       </div>
       <div className="grid g-73 mb">
         <div className="card"><div className="card-h"><h2>Today's QC · {fdate(new Date(), 'd M')}</h2><Link to="/schedule">View schedule</Link></div>
           {!d.today.length ? <Empty>No QC scheduled for today.</Empty> :
             <div className="tbl-wrap"><table className="t"><thead><tr><th>Job</th><th>Vendor</th><th>Client</th><th>Inspector</th><th>SKUs</th><th>Status</th></tr></thead><tbody>
-              {d.today.map((j) => <tr key={j.id}><td><div className="skucell"><Thumb src={j.img} size={36} /><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></div></td><td>{j.vendor_name}</td><td>{j.client_code}</td>
+              {d.today.map((j) => <tr key={j.id} className="rowlink" onClick={() => nav('/request/' + j.id)}><td><div className="skucell"><Thumb src={j.img} size={36} /><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></div></td><td>{j.vendor_name}</td><td>{j.client_code}</td>
                 <td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : <span className="muted">—</span>}</td><td>{j.skus} SKU</td><td><Badge s={j.status} /></td></tr>)}
             </tbody></table></div>}
         </div>
         <div className="card"><div className="card-h"><h2>Upcoming QC</h2><Link to="/jobs">All</Link></div>
           {!d.upcoming.length ? <Empty>Nothing upcoming.</Empty> :
-            <table className="t"><thead><tr><th>Date</th><th>Vendor</th><th>Client</th><th>Status</th></tr></thead><tbody>
-              {d.upcoming.map((j) => <tr key={j.id}><td>{fdate(j.d, 'd M')}</td><td><Link to={'/request/' + j.id}>{j.vendor_name}</Link></td><td>{j.client_code}</td>
+            <table className="t"><thead><tr><th>Date</th><th>Job / vendor</th><th>Client</th><th>Status</th></tr></thead><tbody>
+              {d.upcoming.map((j) => <tr key={j.id} className="rowlink" title="Open to assign / reschedule" onClick={() => nav('/request/' + j.id)}><td>{fdate(j.d, 'd M')}</td><td><Link to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><br /><small>{j.vendor_name} · PO {j.po_no}</small></td><td>{j.client_code}</td>
                 <td>{j.status === 'SCHEDULED' && !j.inspector_id ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}</td></tr>)}</tbody></table>}
         </div>
       </div>
