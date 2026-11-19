@@ -39,7 +39,7 @@ function db_install(): void {
         'clients' => "id $pk, code VARCHAR(20) NOT NULL UNIQUE, name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
             address TEXT, report_format VARCHAR(100), aql_default VARCHAR(20) DEFAULT '2.5', major_limit DECIMAL(6,2) DEFAULT 2.5, fail_threshold DECIMAL(6,2) DEFAULT 80, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT, qc_manager_id INT NULL",
         'vendors' => "id $pk, code VARCHAR(30) NOT NULL UNIQUE, short_code VARCHAR(20), name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
-            address TEXT, location $T, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
+            address TEXT, location $T, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT, geo_lat VARCHAR(20) NULL, geo_lng VARCHAR(20) NULL, geo_radius INT NULL, geo_pending_lat VARCHAR(20) NULL, geo_pending_lng VARCHAR(20) NULL, geo_pending_by INT NULL, geo_pending_at DATETIME NULL",
         'client_vendor' => "client_id INT NOT NULL, vendor_id INT NOT NULL, PRIMARY KEY (client_id, vendor_id)",
         'users' => "id $pk, name $T NOT NULL, email $T, emp_code VARCHAR(40), password_hash $T NOT NULL, pw_enc TEXT NULL, role VARCHAR(30) NOT NULL,
             client_id INT NULL, vendor_id INT NULL, phone VARCHAR(40), designation $T NULL, location $T, area $T, joined_on $D NULL,
@@ -71,6 +71,8 @@ function db_install(): void {
             return_sections $T NULL, return_reason TEXT, return_count INT DEFAULT 0,
             report_no VARCHAR(60) NULL, rev INT DEFAULT 0, locked INT DEFAULT 0, pdf_path $T NULL,
             submitted_at $DT NULL, approved_at $DT NULL, approved_by INT NULL, started_at $DT NULL, updated_at $DT NULL",
+        'checkins' => "id $pk, job_id INT, user_id INT NOT NULL, vendor_id INT, lat VARCHAR(20), lng VARCHAR(20), acc INT, dist_m INT, verified INT DEFAULT 0, note $T, at DATETIME, out_at DATETIME NULL",
+        'leaves' => "id $pk, user_id INT NOT NULL, from_date DATE, to_date DATE, note $T, created_by INT, created_at DATETIME",
         'item_defects' => "id $pk, item_id INT NOT NULL, category $T, type $T, severity VARCHAR(20), qty INT DEFAULT 0, remark TEXT",
         'item_photos' => "id $pk, item_id INT NOT NULL, kind VARCHAR(30), path $T NOT NULL, remark $T, created_at $DT",
         'attachments' => "id $pk, job_id INT NOT NULL, item_id INT NULL, path $T NOT NULL, name $T, created_at $DT",
@@ -90,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 6) return;
+    if ($ver >= 7) return;
+    if ($ver === 6) { db_migrate_v7(); return; }
     if ($ver === 5) { db_migrate_v6(); return; }
     if ($ver === 4) { db_migrate_v5(); return; }
     if ($ver === 3) { db_migrate_v4(); return; }
@@ -147,6 +150,20 @@ function db_migrate_v6(): void {
     foreach (all('SELECT id, password_hash FROM users WHERE pw_enc IS NULL') as $u)
         foreach (['Admin@123', 'Demo@123'] as $p) if (password_verify($p, $u['password_hash'])) { q('UPDATE users SET pw_enc=? WHERE id=?', [pw_enc($p), $u['id']]); break; }
     set_setting('schema_version', '6');
+    db_migrate_v7();
+}
+/** v7: geo-fenced factory check-in (vendor GPS pin, check-ins) and inspector leave. */
+function db_migrate_v7(): void {
+    $pk = is_sqlite() ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'; $T = is_sqlite() ? 'TEXT' : 'VARCHAR(255)';
+    $tables = ['checkins' => "id $pk, job_id INT, user_id INT NOT NULL, vendor_id INT, lat VARCHAR(20), lng VARCHAR(20), acc INT, dist_m INT, verified INT DEFAULT 0, note $T, at DATETIME, out_at DATETIME NULL",
+        'leaves' => "id $pk, user_id INT NOT NULL, from_date DATE, to_date DATE, note $T, created_by INT, created_at DATETIME"];
+    foreach ($tables as $t => $cols) db()->exec("CREATE TABLE IF NOT EXISTS $t ($cols)");
+    foreach (['geo_lat' => 'VARCHAR(20) NULL', 'geo_lng' => 'VARCHAR(20) NULL', 'geo_radius' => 'INT NULL', 'geo_pending_lat' => 'VARCHAR(20) NULL', 'geo_pending_lng' => 'VARCHAR(20) NULL', 'geo_pending_by' => 'INT NULL', 'geo_pending_at' => 'DATETIME NULL'] as $c => $def) {
+        try { db()->query("SELECT $c FROM vendors LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE vendors ADD COLUMN $c $def"); }
+    }
+    if (setting('geo_radius', '') === '') set_setting('geo_radius', '250');
+    if (setting('geo_checkin_required', '') === '') set_setting('geo_checkin_required', '0');
+    set_setting('schema_version', '7');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

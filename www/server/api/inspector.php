@@ -27,7 +27,9 @@ api('GET', 'app/job', ['inspector'], function () {
     $job = job_load((int)in_('id')); if (!$job || !my_job($job)) fail('Job not found', 404);
     $job['scope_label'] = scope_label($job);
     $lines = []; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$job['id']]) as $x) { $L = line_stats($job, (int)$x['id']); unset($L['log']); $lines[$x['id']] = $L; }
-    return ['job' => $job, 'lines' => $lines, 'can_lot' => flag('inspector_new_job') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
+    $ck = open_checkin((int)user()['id']); $vg = one('SELECT geo_lat, geo_lng, geo_radius FROM vendors WHERE id=?', [$job['vendor_id']]);
+    return ['job' => $job, 'lines' => $lines, 'checkin' => $ck && (int)$ck['vendor_id'] === (int)$job['vendor_id'] ? $ck : null, 'checkin_other' => $ck && (int)$ck['vendor_id'] !== (int)$job['vendor_id'] ? $ck['vendor_name'] : null,
+        'geo' => ['pin' => $vg && $vg['geo_lat'] !== null && $vg['geo_lat'] !== '', 'radius' => (int)($vg['geo_radius'] ?? 0 ?: setting('geo_radius', '250')), 'required' => flag('geo_checkin_required'), 'today' => $job['scheduled_date'] === today() || $job['status'] !== 'ASSIGNED'], 'can_lot' => flag('inspector_new_job') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
         'items' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.instructions, i.parent_id, i.lot_seq FROM qc_items i WHERE i.job_id=? ORDER BY COALESCE(i.parent_id, i.id), COALESCE(i.lot_seq, 1), i.id', [$job['id']]),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=?', [$job['id']])),
         'can_add' => flag('inspector_new_job') && in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED'], true)];
@@ -85,6 +87,8 @@ $after = in_array($it['status'], ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'], true
 switch ($act) {
 case 'start':
     if (!$editable) json_out(['error' => 'Read-only'], 409);
+    if (!$admin && flag('geo_checkin_required') && !$it['started_at'] && (!($ck = open_checkin((int)$me['id'])) || (int)$ck['vendor_id'] !== (int)$job['vendor_id']))
+        json_out(['error' => 'Please CHECK-IN at the vendor factory first (Job screen → 📍 CHECK-IN AT VENDOR).'], 409);
     $d = ['updated_at' => now()];
     if (!$it['started_at']) $d['started_at'] = now();
     if ($it['status'] === 'PENDING') $d['status'] = 'IN_PROGRESS';
@@ -306,4 +310,46 @@ api('POST', 'app/newjob', ['inspector'], function () {
     notify_managers($full, "On-site QC job {$job['job_no']} created by {$me['emp_code']} · {$full['client_code']} – {$full['vendor_name']} · PO $po", 'request/' . $jid);
     notify_role('back_office', "On-site QC job {$job['job_no']} created by {$me['emp_code']} · PO $po", 'request/' . $jid);
     return ['ok' => true, 'job_id' => $jid, 'first' => $ids[0], 'message' => "Job {$job['job_no']} created — start inspection."];
+});
+
+/* ----- geo-fenced factory check-in ----- */
+api('POST', 'app/checkin', ['inspector'], function () {
+    $me = user(); $in = inp();
+    $job = job_load((int)($in['job_id'] ?? 0)); if (!$job || !my_job($job)) fail('Job not found in your list', 404);
+    $v = one('SELECT * FROM vendors WHERE id=?', [$job['vendor_id']]);
+    if (!empty($in['out'])) {
+        $c = open_checkin((int)$me['id']); if (!$c) fail('You are not checked in.');
+        q('UPDATE checkins SET out_at=? WHERE id=?', [now(), $c['id']]); audit('job', (int)$job['id'], 'CHECK_OUT', 'factory', null, $v['name']);
+        return ['ok' => true, 'message' => 'Checked out from ' . $v['name'] . ' at ' . date('h:i A') . '.'];
+    }
+    $lat = (float)($in['lat'] ?? 0); $lng = (float)($in['lng'] ?? 0); $acc = (int)($in['acc'] ?? 0);
+    if (!$lat && !$lng) fail('Location not received — allow location permission for this app and switch on GPS, then try again.');
+    if ($c = open_checkin((int)$me['id'])) {
+        if ((int)$c['vendor_id'] === (int)$v['id']) return ['ok' => true, 'already' => true, 'message' => 'Already checked in at ' . $v['name'] . ' since ' . date('h:i A', strtotime($c['at'])) . '.'];
+        q('UPDATE checkins SET out_at=? WHERE id=?', [now(), $c['id']]);   // moved to another factory: close the old one
+    }
+    $radius = (int)($v['geo_radius'] ?: setting('geo_radius', '250'));
+    $row = ['job_id' => $job['id'], 'user_id' => $me['id'], 'vendor_id' => $v['id'], 'lat' => (string)$lat, 'lng' => (string)$lng, 'acc' => $acc, 'at' => now()];
+    if ($v['geo_lat'] !== null && $v['geo_lat'] !== '') {
+        $dist = geo_dist($lat, $lng, (float)$v['geo_lat'], (float)$v['geo_lng']);
+        $slack = min(max($acc, 0), 100);   // allow for phone GPS accuracy, max 100 m
+        if ($dist > $radius + $slack) {
+            audit('job', (int)$job['id'], 'CHECK_IN_BLOCKED', 'distance', null, geo_fmt($dist));
+            fail('You are ' . geo_fmt($dist) . ' away from ' . $v['name'] . ' factory. Please reach the factory gate to Check-In.' . ($acc > 100 ? ' (GPS accuracy is low: ±' . $acc . ' m — step outside / wait a few seconds and retry.)' : ''));
+        }
+        $id = insert('checkins', $row + ['dist_m' => $dist, 'verified' => 1]);
+        $msg = "Check-in verified ✓ at {$v['name']} (" . geo_fmt($dist) . ' from factory pin).';
+    } else {
+        // no factory pin yet: record the location and ask Admin to verify it as the factory pin
+        $id = insert('checkins', $row + ['dist_m' => null, 'verified' => 0, 'note' => 'Factory pin not set — location sent for admin verification']);
+        update('vendors', ['geo_pending_lat' => (string)$lat, 'geo_pending_lng' => (string)$lng, 'geo_pending_by' => $me['id'], 'geo_pending_at' => now()], 'id=?', [$v['id']]);
+        foreach (array_merge(manager_ids($job), array_map('intval', array_column(all("SELECT id FROM users WHERE role IN ('super_admin','back_office') AND status='ACTIVE'"), 'id'))) as $u)
+            notify($u, "Factory GPS pin for {$v['name']} captured by {$me['emp_code']} — please verify in Vendors", 'vendors?id=' . $v['id']);
+        $msg = "Checked in at {$v['name']}. This factory has no GPS pin yet — your location was sent to Admin to save as the factory pin.";
+    }
+    audit('job', (int)$job['id'], 'CHECK_IN', 'factory', null, $v['name'] . (isset($dist) ? ' · ' . geo_fmt($dist) : ' · pin pending'));
+    $t = date('h:i A');
+    notify_role('vendor', "🟢 Inspector {$me['emp_code']} ({$me['name']}) arrived at factory at $t · PO {$job['po_no']}", 'dashboard', ['vendor_id' => $v['id']]);
+    foreach (manager_ids($job) as $u) notify($u, "{$me['emp_code']} checked in at {$v['name']} · $t", 'request/' . $job['id']);
+    return ['ok' => true, 'id' => $id, 'verified' => isset($dist), 'message' => $msg];
 });

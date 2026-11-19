@@ -143,3 +143,10 @@ export function Thumb({ src, size = 44, alt = '', style }) {
     {open && <div className="lightbox" onClick={() => setOpen(false)}><img src={u} alt={alt} /><span>{alt}</span></div>}
   </>;
 }
+
+/** 4-state inspector status: AVAILABLE / ASSIGNED (en-route) / ON-SITE / OFF-LEAVE. */
+export function InspSt({ st, small }) {
+  if (!st) return null;
+  const c = { AVAILABLE: ['#e3f4ea', '#1d7a4b', '🟢'], ASSIGNED: ['#fff5d6', '#8a6a10', '🟡'], ONSITE: ['#e1effa', '#1f5f99', '🔵'], LEAVE: ['#eceef1', '#4b5560', '⚫'] }[st.code] || ['#eee', '#333', ''];
+  return <span className="ist" title={st.sub} style={{ background: c[0], color: c[1], fontSize: small ? 10.5 : 11.5 }}>{c[2]} {st.label}</span>;
+}

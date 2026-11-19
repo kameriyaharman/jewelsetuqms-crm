@@ -51,10 +51,11 @@ export function AppJob() {
         {!!d.attachments.length && <div className="mt">{d.attachments.map((a) => <a key={a.id} className="pill" target="_blank" rel="noreferrer" href={a.url}>📎 {a.name}</a>)}</div>}
       </div>
       <input type="search" placeholder="Search SKU…" value={s} onChange={(e) => setS(e.target.value)} style={{ marginBottom: 10 }} />
+      <CheckIn d={d} reload={q.reload} />
       {j.status === 'PARTIAL' && <div className="note" style={{ background: '#fff1e0', borderColor: '#f0c79a', color: '#8a4310', marginBottom: 10 }}><b>Partial QC done — job open.</b> When the vendor presents the balance or repaired pieces, tap <b>+ Next QC lot</b> on the SKU.</div>}
       <div className="mcard"><b>Product list</b><div className="mlist">{d.items.filter((i) => i.sku.toUpperCase().includes(s.toUpperCase())).map((i) => { const L = d.lines[i.id]; return <div key={i.id}>
         <Link to={'/app/inspect/' + i.id}><span className="mitem">{i.parent_id ? <span style={{ width: 52, textAlign: 'center', color: 'var(--mut)' }}>↳</span> : <Thumb src={i.img} size={52} alt={i.sku} />}<span><b className="mono">{i.sku}</b>{(i.parent_id || (L && L.lots > 1)) && <small style={{ display: 'inline' }}> · Lot {i.lot_seq || 1}</small>}<small>{i.product} · {num(i.ready_qty)} pcs · insp {num(i.insp_qty)}</small>
-          {L && (L.lots > 1 || !L.complete) && <span className="cum"><span>Order {num(L.order)}</span><span className="ok">OK {num(L.accepted)}</span><span className={L.pending ? 'p' : ''}>Bal {num(L.pending)}</span></span>}</span></span><Badge s={i.status} /></Link>
+          {L && (L.lots > 1 || (L.accepted > 0 && !L.complete)) && <span className="cum"><span>Order {num(L.order)}</span><span className="ok">OK {num(L.accepted)}</span><span className={L.pending ? 'p' : ''}>Bal {num(L.pending)}</span></span>}</span></span><Badge s={i.status} /></Link>
         {L && L.can_add_lot && d.can_lot && <button className="bigbtn alt" style={{ margin: '0 0 8px', padding: '9px', fontSize: 13 }} onClick={() => setLot({ root: i.id, sku: i.sku, pending: L.pending, ready: L.pending })}><Icon n="plus" /> NEXT QC LOT / RE-INSPECTION</button>}</div>; })}</div></div>
       <Modal open={!!lot} title={lot ? 'Next QC lot · ' + lot.sku : ''} onClose={() => setLot(null)}>
         {lot && <><p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>Balance <b>{num(lot.pending)}</b> pcs. Specs, images and files are already filled — enter how many pieces the vendor presented today (fresh + repaired).</p>
@@ -102,4 +103,26 @@ export function AppProfile() {
     <div className="mcard"><b>Change password</b><div className="mt"><PasswordForm mobile /></div></div>
     <button className="bigbtn ruby" onClick={async () => { await logout(); nav('/login'); }}>Logout</button>
   </>}</Loader></MPage>;
+}
+
+/** Geo-fenced factory check-in: inspector proves arrival at the vendor gate (live GPS within the factory radius). */
+function CheckIn({ d, reload }) {
+  const toast = useToast(); const [busy, setBusy] = useState(false); const c = d.checkin; const g = d.geo;
+  if (!g || ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'EMAILED', 'CLOSED'].includes(d.job.status)) return null;
+  const send = async (out) => {
+    setBusy(true);
+    try {
+      if (out) { const r = await post('app/checkin', { job_id: d.job.id, out: 1 }); toast(r.message); reload(); setBusy(false); return; }
+      if (!navigator.geolocation) throw new Error('This phone/browser cannot share location.');
+      const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? 'Location permission denied — allow location for this site in browser settings and try again.' : 'Could not get GPS location — switch on location / GPS and try again outdoors.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+      const r = await post('app/checkin', { job_id: d.job.id, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) });
+      toast(r.message, r.verified === false ? 'warn' : undefined); reload();
+    } catch (e) { toast(e.message, 'err'); }
+    setBusy(false);
+  };
+  if (c) return <div className="mcard" style={{ borderColor: '#9cc3e6', background: '#f1f7fd' }}><b style={{ color: '#1f5f99' }}>🔵 ON-SITE · checked in {new Date(c.at.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>
+    <small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>{+c.verified ? `GPS verified ✓ · ${c.dist_m} m from factory pin` : 'Factory pin not set yet — your location was sent to Admin'}</small>
+    <button className="btn sm" disabled={busy} onClick={() => send(true)}>Check-out from factory</button></div>;
+  return <div className="mcard"><b>Arrived at the factory?</b><small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>{g.pin ? `Check-in works within ${g.radius} m of the factory gate.` : 'This factory has no GPS pin yet — your first check-in location is sent to Admin to verify.'}{g.required ? ' Required before starting inspection.' : ''}{d.checkin_other ? ` You are still checked in at ${d.checkin_other} — it will be closed.` : ''}</small>
+    <button className="bigbtn gold" style={{ margin: 0 }} disabled={busy} onClick={() => send(false)}>{busy ? 'Getting GPS location…' : '📍 CHECK-IN AT VENDOR'}</button></div>;
 }

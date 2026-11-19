@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Modal, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
+import { Badge, Empty, Icon, InspSt, Loader, Modal, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
 import { fdate, num, today } from '../app/util';
 
 const TABS = [['ALL', 'All'], ['UNASSIGNED', 'Unassigned'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['REVIEW', 'Review'], ['OPEN', 'Open / partial QC'], ['CLOSED', 'Complete / closed']];
@@ -20,6 +20,12 @@ export default function Jobs() {
   const go = (o) => { const n = { f, ...(qs ? { q: qs } : {}), ...o }; Object.keys(n).forEach((k) => !n[k] && delete n[k]); setSp(n); };
   const toggle = (id) => setPick((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const doBulk = async () => { const r = await run(() => post('jobs/bulk_assign', { ids: [...pick], ...bulk })); if (r) { setPick(new Set()); q.reload(); refresh(); } };
+  const doUnassign = async () => {
+    if (!window.confirm(`Move ${pick.size} job(s) back to the Unassigned pool? They disappear from the inspector's app.`)) return;
+    let r = await run(() => post('jobs/bulk_assign', { ids: [...pick], unassign: 1 }));
+    if (r && me.user.role === 'super_admin' && /use force/.test(r.message || '') && window.confirm('Some jobs are already in progress. Force unassign them too? (Saved inspection data stays on the job.)')) r = await run(() => post('jobs/bulk_assign', { ids: [...pick], unassign: 1, force: 1 }));
+    if (r) { setPick(new Set()); q.reload(); refresh(); }
+  };
   const addLot = async () => { const r = await run(() => post('job/action', { act: 'add_lot', id: lot.job_id, item_id: lot.item_id, ready_qty: lot.ready, date: lot.date })); if (r) { setLot(null); q.reload(); refresh(); } };
   const [view, setViewS] = useState(() => { try { return localStorage.getItem('qt_jobs_view') || 'list'; } catch { return 'list'; } });
   const setView = (v) => { setViewS(v); try { localStorage.setItem('qt_jobs_view', v); } catch { /* ignore */ } };
@@ -37,6 +43,7 @@ export default function Jobs() {
           <Sel value={bulk.inspector_id} onChange={(v) => setBulk({ ...bulk, inspector_id: v })} options={d.inspectors.map((i) => [i.id, `${i.emp_code} · ${i.name}`])} blank="Select inspector" />
           <input type="date" value={bulk.date} onChange={(e) => setBulk({ ...bulk, date: e.target.value })} title="QC date (optional)" />
           <button className="btn gold" disabled={busy || !bulk.inspector_id} onClick={doBulk}>ASSIGN SELECTED ({pick.size} JOBS)</button>
+          <button className="btn" style={{ background: '#fff', color: 'var(--ruby)', borderColor: '#fff' }} disabled={busy} onClick={doUnassign}>UNASSIGN SELECTED</button>
           <button className="btn sm" onClick={() => setPick(new Set())}>Clear</button></div>}
         {!d.rows.length ? <Empty>No jobs.</Empty> : view === 'cards' ? <div className="cards">{d.rows.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
             <Link to={'/request/' + j.id} className="pimg"><Thumb src={j.img} size={150} alt={j.job_no} /></Link>
@@ -52,7 +59,7 @@ export default function Jobs() {
             {f === 'OPEN' ? <><td className="num">{num(j.bal?.order)}</td><td className="num ok-t"><b>{num(j.bal?.accepted)}</b></td><td className="num bad-t"><b>{num(j.bal?.pending)}</b></td></> : <>
             <td>{fdate(j.scheduled_date, 'd M')} <small>{j.time_slot}</small></td></>}<td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : '—'}</td>
             <td>{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
-              {canAssign && OPEN.includes(j.status) && <> <button className="btn sm" onClick={() => go({ id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}
+              {canAssign && [...OPEN, 'SCHEDULED'].includes(j.status) && <> <button className="btn sm" onClick={() => go({ id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}
               {j.status === 'PARTIAL' && j.bal?.lot && <> <button className="btn sm gold" onClick={() => setLot({ job_id: j.id, job_no: j.job_no, ...j.bal.lot, ready: j.bal.lot.pending, date: today() })}>+ Add next QC lot</button></>}</td></tr>)}
         </tbody></table></div>}
         <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>Lifecycle: Requested → Scheduled → Assigned → In progress → Submitted → Under review → Approved → PDF generated → Emailed → Closed</p>
@@ -70,19 +77,23 @@ export default function Jobs() {
 
 function AssignPanel({ id, onDone }) {
   const q = useApi('jobs/assign', { id }); const { run, busy } = useAction();
-  const F = useForm({ inspector_id: '', inspector2_id: '', notify_vendor: true });
-  useEffect(() => { if (q.data) F.setF({ inspector_id: q.data.job.inspector_id || '', inspector2_id: q.data.job.inspector2_id || '', notify_vendor: true }); /* eslint-disable-next-line */ }, [q.data]);
+  const F = useForm({ inspector_id: '', inspector2_id: '', notify_vendor: true, force: false });
+  useEffect(() => { if (q.data) F.setF({ inspector_id: q.data.job.inspector_id || '', inspector2_id: q.data.job.inspector2_id || '', notify_vendor: true, force: false }); /* eslint-disable-next-line */ }, [q.data]);
   return <Loader q={q}>{(d) => <div className="card"><h2 className="mb">Assign inspector</h2>
     <div className="kv mb"><div><small>QC job</small><b>{d.job.job_no || d.job.req_no}</b></div><div><small>Client</small><b>{d.job.client_code}</b></div><div><small>Vendor</small><b>{d.job.vendor_name}</b></div><div><small>QC date</small><b>{fdate(d.date, 'd-m-Y')}</b></div></div>
-    <form onSubmit={async (e) => { e.preventDefault(); if (!F.f.inspector_id) return; const r = await run(() => post('job/action', { act: 'assign', id, date: d.date, ...F.f })); if (r) onDone(); }}>
+    <form onSubmit={async (e) => { e.preventDefault(); if (!F.f.inspector_id && !d.job.inspector_id) return; const r = await run(() => post('job/action', { act: 'assign', id, date: d.date, ...F.f })); if (r) onDone(); }}>
       <label>Available team</label>
-      <div className="stack f">{d.team.map((t) => <label key={t.id} className="rc"><input type="radio" checked={String(F.f.inspector_id) === String(t.id)} onChange={() => F.set('inspector_id', t.id)} />
-        <b> {t.emp_code} · {t.name}</b> <span style={{ float: 'right' }}>{+t.busy ? <Badge s="BUSY" /> : <Badge s="AVAILABLE" />}</span>
-        <small>{t.location} · {+t.busy ? `${t.busy} job(s) that day` : 'free'}{t.near ? ' · near vendor' : ''}</small></label>)}</div>
+      <div className="stack f">
+        {d.job.inspector_id && <label className={'rc' + (!d.unassign_ok && !d.is_sa ? ' dis' : '')} style={{ borderStyle: 'dashed' }}><input type="radio" disabled={!d.unassign_ok && !d.is_sa} checked={!F.f.inspector_id} onChange={() => F.setF({ ...F.f, inspector_id: '', inspector2_id: '' })} />
+          <b> — Unassigned (move to pending pool) —</b><small>{d.unassign_ok ? 'Removes the job from the inspector\'s app; it goes back to the Unassigned tab.' : d.is_sa ? 'Inspection already started — Super Admin can force it (saved data stays).' : 'Not allowed — inspection already started / submitted.'}</small></label>}
+        {d.team.map((t) => <label key={t.id} className={'rc' + (t.st.code === 'LEAVE' ? ' dis' : '')}><input type="radio" disabled={t.st.code === 'LEAVE'} checked={String(F.f.inspector_id) === String(t.id)} onChange={() => F.set('inspector_id', t.id)} />
+        <b> {t.emp_code} · {t.name}</b> <span style={{ float: 'right' }}><InspSt st={t.st} small /></span>
+        <small>{t.location} · {t.st.sub}{t.near ? ' · near vendor' : ''}</small></label>)}</div>
+      {!F.f.inspector_id && d.job.inspector_id && !d.unassign_ok && d.is_sa && <label className="chk f" style={{ color: 'var(--ruby)' }}><input type="checkbox" checked={F.f.force} onChange={(e) => F.set('force', e.target.checked)} /> I understand — force unassign although inspection has started</label>}
       {d.split && d.skus > 1 && <div className="f"><label>Split job across 2 inspectors ({d.skus} SKUs) — second inspector</label>
         <Sel value={F.f.inspector2_id} onChange={(v) => F.set('inspector2_id', v)} options={d.team.map((t) => [t.id, `${t.emp_code} · ${t.name}`])} blank="— no split —" /></div>}
       <label>Notify</label><label className="chk">✓ Inspector — app notification</label>
       <label className="chk f"><input type="checkbox" checked={F.f.notify_vendor} onChange={(e) => F.set('notify_vendor', e.target.checked)} /> Vendor — gate entry notice</label>
-      <button className="btn pri block" disabled={busy || !F.f.inspector_id}>ASSIGN INSPECTOR</button>
+      <button className="btn pri block" disabled={busy || (!F.f.inspector_id && (!d.job.inspector_id || (!d.unassign_ok && !F.f.force)))} style={!F.f.inspector_id && d.job.inspector_id ? { background: 'var(--ruby)', borderColor: 'var(--ruby)' } : {}}>{F.f.inspector_id || !d.job.inspector_id ? 'ASSIGN INSPECTOR' : 'SAVE · MOVE TO UNASSIGNED'}</button>
     </form></div>}</Loader>;
 }

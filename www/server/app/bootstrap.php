@@ -452,3 +452,51 @@ function pw_dec(?string $enc): ?string {
 }
 /** Columns to store when a password is set. */
 function pw_fields(string $plain): array { return ['password_hash' => password_hash($plain, PASSWORD_DEFAULT), 'pw_enc' => pw_enc($plain)]; }
+
+/**
+ * Can this job lose its inspector? Only while ASSIGNED / SCHEDULED and nothing has been inspected yet.
+ * Super Admin may force it (with warning) when inspection already started. Returns null when OK, else the reason.
+ */
+function unassign_block(array $job, bool $force = false): ?string {
+    if (in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED'], true)) {
+        $started = (int)val("SELECT COUNT(*) FROM qc_items WHERE job_id=? AND (started_at IS NOT NULL OR status NOT IN ('PENDING'))", [$job['id']]);
+        if (!$started) return null;
+    }
+    $why = in_array($job['status'], ['IN_PROGRESS', 'ASSIGNED'], true) ? 'inspection has already started (IN PROGRESS)' : 'status is ' . $job['status'];
+    if ($force && is_role('super_admin') && in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS', 'RETURNED', 'PARTIAL'], true)) return null;
+    return "Cannot unassign {$job['job_no']} — $why." . (is_role('super_admin') ? ' Tick "force" to unassign anyway (saved data stays on the job).' : ' Only Super Admin can force this.');
+}
+function unassign_job(array $job): void {
+    $old = $job['inspector_id'];
+    $st = in_array($job['status'], ['ASSIGNED', 'IN_PROGRESS'], true) ? 'SCHEDULED' : $job['status'];
+    update('qc_jobs', ['inspector_id' => null, 'inspector2_id' => null, 'status' => $st], 'id=?', [$job['id']]);
+    audit('job', (int)$job['id'], 'UNASSIGNED', 'inspector', $job['inspector_code'] ?? null, null);
+    if ($st !== $job['status']) audit('job', (int)$job['id'], 'STATUS', 'status', $job['status'], $st);
+    if ($old) notify((int)$old, "QC job {$job['job_no']} removed from your list (unassigned) · {$job['vendor_name']}", 'app');
+}
+
+/* ---------------- geo-fenced check-in & inspector live status ---------------- */
+function geo_dist(float $la1, float $lo1, float $la2, float $lo2): int {
+    $r = 6371000; $p1 = deg2rad($la1); $p2 = deg2rad($la2); $dp = deg2rad($la2 - $la1); $dl = deg2rad($lo2 - $lo1);
+    $a = sin($dp / 2) ** 2 + cos($p1) * cos($p2) * sin($dl / 2) ** 2;
+    return (int)round(2 * $r * asin(min(1, sqrt($a))));
+}
+function geo_fmt(int $m): string { return $m >= 1000 ? number_format($m / 1000, 1) . ' km' : $m . ' m'; }
+/** Leave note if the user is on leave that date, else null. */
+function on_leave(int $uid, string $date): ?string {
+    $l = one('SELECT note, from_date, to_date FROM leaves WHERE user_id=? AND from_date<=? AND to_date>=? ORDER BY id DESC LIMIT 1', [$uid, $date, $date]);
+    return $l ? ($l['note'] ?: 'leave ' . fdate($l['from_date'], 'd M') . ($l['to_date'] !== $l['from_date'] ? '–' . fdate($l['to_date'], 'd M') : '')) : null;
+}
+/** Today's open check-in of an inspector (at a factory, not checked out). */
+function open_checkin(int $uid, ?string $date = null): ?array {
+    $d = $date ?: today();
+    return one("SELECT c.*, v.name vendor_name FROM checkins c LEFT JOIN vendors v ON v.id=c.vendor_id WHERE c.user_id=? AND c.out_at IS NULL AND c.at>=? AND c.at<? ORDER BY c.id DESC LIMIT 1", [$uid, "$d 00:00:00", date('Y-m-d', strtotime("$d +1 day")) . ' 00:00:00']) ?: null;
+}
+/** 4-state live status of an inspector for a date: AVAILABLE / ASSIGNED (en-route) / ONSITE / LEAVE. */
+function insp_status(int $uid, string $date, int $excludeJob = 0): array {
+    if ($lv = on_leave($uid, $date)) return ['code' => 'LEAVE', 'label' => 'OFF / ON LEAVE', 'sub' => $lv, 'jobs' => 0];
+    $jobs = (int)val("SELECT COUNT(*) FROM qc_jobs WHERE (inspector_id=? OR inspector2_id=?) AND scheduled_date=? AND status IN ('ASSIGNED','IN_PROGRESS') AND id<>?", [$uid, $uid, $date, $excludeJob]);
+    if ($date === today() && ($c = open_checkin($uid))) return ['code' => 'ONSITE', 'label' => 'ON-SITE', 'sub' => 'At ' . ($c['vendor_name'] ?: 'factory') . ' · since ' . date('h:i A', strtotime($c['at'])) . ($c['verified'] ? '' : ' (GPS not verified)'), 'jobs' => $jobs, 'vendor_id' => (int)$c['vendor_id']];
+    if ($jobs) return ['code' => 'ASSIGNED', 'label' => $date === today() ? 'ASSIGNED · EN-ROUTE' : 'ASSIGNED', 'sub' => "$jobs job(s) that day", 'jobs' => $jobs];
+    return ['code' => 'AVAILABLE', 'label' => 'AVAILABLE', 'sub' => 'free', 'jobs' => 0];
+}

@@ -6,14 +6,14 @@ import { post } from '../app/api';
 import { Badge, Empty, Icon, Loader, Multi, Result, Sel, useAction, useApi, useForm } from '../app/ui';
 import { fdate } from '../app/util';
 
-const blank = { id: 0, code: 'VND-', short_code: '', name: '', contact: '', email: '', phone: '', ho_email: '', address: '', location: '', status: 'ACTIVE', client_ids: [], create_login: false, login_pw: '' };
+const blank = { id: 0, code: 'VND-', short_code: '', name: '', contact: '', email: '', phone: '', ho_email: '', address: '', location: '', geo_lat: '', geo_lng: '', geo_radius: '', status: 'ACTIVE', client_ids: [], create_login: false, login_pw: '' };
 
 export default function Vendors() {
   const { me } = useAuth(); const role = me.user.role; const canEdit = ['super_admin', 'back_office'].includes(role);
   const [sp, setSp] = useSearchParams(); const id = sp.get('id'); const edit = sp.has('edit') || sp.has('new');
   const q = useApi('vendors', { id, q: sp.get('q'), client: sp.get('client') });
   const F = useForm(blank); const { run, busy } = useAction(); const sel = q.data?.sel;
-  useEffect(() => { if (sp.has('new')) F.setF(blank); else if (sel) F.setF({ ...blank, ...sel, short_code: sel.short_code || '' }); /* eslint-disable-next-line */ }, [sel?.id, sp.has('new')]);
+  useEffect(() => { if (sp.has('new')) F.setF(blank); else if (sel) F.setF({ ...blank, ...sel, short_code: sel.short_code || '', geo_lat: sel.geo_lat || '', geo_lng: sel.geo_lng || '', geo_radius: sel.geo_radius || '' }); /* eslint-disable-next-line */ }, [sel?.id, sp.has('new')]);
   const save = async (e) => { e.preventDefault(); const r = await run(() => post('vendors/save', F.f)); if (r) { setSp({ id: r.id }); q.reload(); } };
   const b = F.bind, f = F.f;
   return <Page title={role === 'client' ? 'My Vendors' : 'Vendor Management'} actions={canEdit && <button className="btn pri" onClick={() => setSp({ new: 1 })}><Icon n="plus" /> Add Vendor</button>}>
@@ -38,6 +38,10 @@ export default function Vendors() {
           <div className="grid g4 mb" style={{ gap: 8, textAlign: 'center' }}>
             {[['Total QC', sel.stats.n, ''], ['Pass', sel.stats.pass, 'ok-t'], ['Fail', sel.stats.fail, 'bad-t'], ['Rejection', sel.stats.rate.toFixed(1) + '%', '']].map(([l, v, c]) =>
               <div key={l} className="card" style={{ padding: 10, margin: 0 }}><small>{l}</small><div className={'big ' + c}>{v}</div></div>)}</div>
+          <div className={'note mb ' + (sel.geo_lat ? '' : 'gold')} style={{ fontSize: 12.5 }}><b>Factory GPS pin:</b> {sel.geo_lat ? <>{sel.geo_lat}, {sel.geo_lng} · radius {sel.geo_radius || d.geo_radius || 250} m · <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${sel.geo_lat},${sel.geo_lng}`}>map</a></> : 'not set — inspector check-in cannot be GPS-verified yet.'}
+            {sel.geo_pending_lat && <div className="mt"><b>📍 Location captured by inspector {sel.geo_pending_by_code || ''} on {fdate(sel.geo_pending_at, 'd M, h:i A')}:</b> {sel.geo_pending_lat}, {sel.geo_pending_lng} · <a target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${sel.geo_pending_lat},${sel.geo_pending_lng}`}>check on map</a>
+              {canEdit && <div className="actions" style={{ justifyContent: 'flex-start', marginTop: 6 }}><button className="btn sm pri" disabled={busy} onClick={async () => { if (await run(() => post('vendors/geo_verify', { id: sel.id, accept: 1 }))) q.reload(); }}>✓ Verify &amp; save as factory pin</button>
+                <button className="btn sm" disabled={busy} onClick={async () => { if (await run(() => post('vendors/geo_verify', { id: sel.id, accept: 0 }))) q.reload(); }}>Reject</button></div>}</div>}</div>
           <div className="actions mb"><Link className="btn" to={'/reports?vendor=' + sel.id}>View QC history</Link><Link className="btn" to={'/analytics?vendor=' + sel.id}>Defect analysis</Link>
             {canEdit && <button className="btn pri" onClick={() => setSp({ id: sel.id, edit: 1 })}>Edit / portal login</button>}</div>
           <h2 className="mb">Recent QC</h2>
@@ -52,6 +56,10 @@ export default function Vendors() {
             <div className="f"><label>Head office email</label><input type="email" {...b('ho_email')} /></div>
             <div className="f"><label>Factory address</label><textarea {...b('address')} /></div>
             <div className="f"><label>Location (area, city)</label><input type="text" {...b('location')} /></div>
+            <div className="f"><label>Factory GPS pin (for inspector check-in)</label><div className="fr"><div><input type="text" placeholder="Latitude e.g. 26.8467" {...b('geo_lat')} /></div><div><input type="text" placeholder="Longitude e.g. 75.8022" {...b('geo_lng')} /></div><div><input type="number" placeholder="Radius m (250)" {...b('geo_radius')} /></div></div>
+              <div className="actions" style={{ justifyContent: 'flex-start', marginTop: 6 }}><button type="button" className="btn sm" onClick={() => navigator.geolocation?.getCurrentPosition((p) => F.setF({ ...F.f, geo_lat: p.coords.latitude.toFixed(6), geo_lng: p.coords.longitude.toFixed(6) }), () => alert('Allow location access to use this.'), { enableHighAccuracy: true, timeout: 20000 })}>📍 Use my current location</button>
+                {f.geo_lat && f.geo_lng && <a className="btn sm" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${f.geo_lat},${f.geo_lng}`}>Check on Google Maps</a>}</div>
+              <small className="muted">Tip: in Google Maps long-press the factory gate → copy the two numbers shown. Leave blank and the first inspector check-in is sent to you to verify.</small></div>
             <div className="f"><label>Mapped clients</label><Multi value={f.client_ids} onChange={(v) => F.set('client_ids', v)} options={d.clients.map((c) => [c.id, c.code + ' — ' + c.name])} size={4} /></div>
             {sel?.login && !sp.has('new') ? <div className="note rose f">Portal login exists: <b>{sel.login.emp_code}</b> ({sel.login.status}). Manage in Team.</div> : <>
               <label className="chk f"><input type="checkbox" checked={!!f.create_login} onChange={(e) => F.set('create_login', e.target.checked)} /> Create vendor portal login (login = vendor code)</label>

@@ -46,13 +46,14 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
         'report_actions' => is_internal() && in_array($job['status'], ['EMAILED', 'APPROVED'], true),
         'finalize' => is_role('super_admin', 'qc_manager') && $job['status'] === 'APPROVED', 'close' => is_internal() && $job['status'] === 'EMAILED',
         'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => flag('allow_job_split') && count($items) > 1,
-        'edit_design' => is_role('super_admin', 'back_office', 'qc_manager') && $openJob, 'add_lot' => is_internal() && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
+        'edit_design' => is_role('super_admin', 'back_office', 'qc_manager') && $openJob, 'unassign' => is_internal() && $job['inspector_id'] && unassign_block($job) === null, 'add_lot' => is_internal() && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
         'force_close' => is_role('super_admin', 'qc_manager') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'DRAFT', 'REQUESTED'], true)];
     // hide unpublished results from clients/vendors
     if ($cv) foreach ($items as &$i) if ($i['status'] !== 'APPROVED') { $i['final_result'] = null; $i['system_result'] = null; }
     unset($i);
     return ['job' => $job, 'items' => $items, 'attachments' => all('SELECT * FROM attachments WHERE job_id=? ORDER BY id', [$job['id']]), 'log' => $log,
-        'emails' => $cv ? [] : all('SELECT * FROM email_log WHERE job_id=? ORDER BY id DESC LIMIT 20', [$job['id']]), 'can' => $can];
+        'emails' => $cv ? [] : all('SELECT * FROM email_log WHERE job_id=? ORDER BY id DESC LIMIT 20', [$job['id']]), 'can' => $can,
+        'checkins' => all('SELECT c.at, c.out_at, c.verified, c.dist_m, u.emp_code, u.name FROM checkins c JOIN users u ON u.id=c.user_id WHERE c.job_id=? ORDER BY c.at DESC', [$job['id']])];
 });
 
 /* ----- request form ----- */
@@ -180,7 +181,14 @@ api('POST', 'job/action', R_ALL, function () {
             if (!is_role('super_admin', 'qc_manager', 'back_office')) break;
             if (!in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS'], true)) fail('Job cannot be (re)assigned in status ' . $job['status']);
             $ins = (int)in_('inspector_id');
-            if ($ins && !one("SELECT id FROM users WHERE id=? AND role='inspector'", [$ins])) fail('Invalid inspector');
+            if (!$ins) {   // -- Unassigned (move to pending pool) --
+                if (!$job['inspector_id']) return ['ok' => true, 'message' => 'Job is already unassigned.'];
+                if ($why = unassign_block($job, (bool)in_('force'))) fail($why);
+                unassign_job($job);
+                return ['ok' => true, 'message' => "{$job['job_no']} moved to the Unassigned pool — removed from the inspector's app."];
+            }
+            if (!one("SELECT id FROM users WHERE id=? AND role='inspector'", [$ins])) fail('Invalid inspector');
+            if ($lv = on_leave($ins, (string)(in_('date') ?: ($job['scheduled_date'] ?: today())))) fail("This inspector is on leave that day ($lv).");
             $d = ['inspector_id' => $ins ?: null, 'inspector2_id' => (int)in_('inspector2_id') ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: user()['id']];
             if (in_('date')) $d['scheduled_date'] = in_('date');
             if (!$job['job_no']) $d['job_no'] = next_job_no();

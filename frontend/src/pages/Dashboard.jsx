@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
-import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi, Thumb } from '../app/ui';
+import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi, Thumb, InspSt } from '../app/ui';
 import { fdate, num, pct } from '../app/util';
 
 export default function Dashboard() {
@@ -30,6 +30,9 @@ export default function Dashboard() {
                 <td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : <span className="muted">—</span>}</td><td>{j.skus} SKU</td><td><Badge s={j.status} /></td></tr>)}
             </tbody></table></div>}
         </div>
+        {d.team_live?.length > 0 && <div className="card"><div className="card-h"><h2>Team live status · today</h2><Link to="/team?f=inspector">Team</Link></div>
+          {d.team_live.map((u) => <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+            <span style={{ fontSize: 13 }}><b className="mono">{u.emp_code}</b> {u.name}<br /><small className="muted">{u.st.sub}</small></span><InspSt st={u.st} small /></div>)}</div>}
         <div className="card"><div className="card-h"><h2>Upcoming QC</h2><Link to="/jobs">All</Link></div>
           {!d.upcoming.length ? <Empty>Nothing upcoming.</Empty> :
             <table className="t"><thead><tr><th>Date</th><th>Job / vendor</th><th>Client</th><th>Status</th></tr></thead><tbody>

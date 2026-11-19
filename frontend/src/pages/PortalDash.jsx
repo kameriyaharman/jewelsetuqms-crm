@@ -55,6 +55,9 @@ export function VendorDash() {
         <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>You see only your own requests. {!can && '“New QC request” appears when JEWELSETU enables self-service requests — until then JEWELSETU Back Office creates them for you.'}</p>
       </div>
       <div>
+        {d.arrivals?.length > 0 && <div className="card" style={{ borderColor: '#9cc3e6' }}><h2 className="mb">Inspector at your factory today</h2>{d.arrivals.map((a, i) => <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
+          {a.out_at ? '⚪' : '🟢'} <b>Inspector {a.emp_code} ({a.name})</b> {a.out_at ? 'visited' : 'arrived at factory'} at <b>{new Date(a.at.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>{a.out_at ? ' · left ' + new Date(a.out_at.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+          <br /><small className="muted">PO {a.po_no}{+a.verified ? ' · GPS verified at your factory gate' : ''}{a.phone ? ' · ' + a.phone : ''}</small></div>)}</div>}
         <div className="card"><h2 className="mb">Upcoming inspection</h2>{!d.next ? <Empty>Nothing scheduled.</Empty> : <>
           <div className="kv"><div><small>Request</small><b>{d.next.req_no} · {d.next.client_code}</b></div><div><small>Date</small><b>{fdate(d.next.scheduled_date)} · {d.next.time_slot}</b></div>
             <div><small>Inspector</small><b>{d.next.emp_code ? `${d.next.emp_code} · ${d.next.iname}` : 'To be assigned'}</b></div><div><small>Location</small><b>{d.next.location}</b></div></div>

@@ -42,10 +42,12 @@ export default function Settings() {
 }
 
 function Toggles({ d, ro, save, busy }) {
-  const [t, setT] = useState({}); useEffect(() => setT(Object.fromEntries(d.toggles.map((x) => [x.key, x.on]))), [d]);
+  const [t, setT] = useState({}); useEffect(() => setT({ ...Object.fromEntries(d.toggles.map((x) => [x.key, x.on])), geo_radius: d.settings?.geo_radius || '250' }), [d]);
   return <><div className="card"><div className="card-h"><h2>Feature toggles</h2><span className="pill">No code deploy needed</span></div>
     {d.toggles.map((x) => <label key={x.key} className="chk" style={{ padding: '10px 0', borderBottom: '1px solid var(--line)', justifyContent: 'space-between' }}>
       <span><b className="mono">{x.key}</b><br /><small>{x.label}</small></span><input type="checkbox" disabled={ro} checked={!!t[x.key]} onChange={(e) => setT({ ...t, [x.key]: e.target.checked })} style={{ width: 20, height: 20 }} /></label>)}
+    <label className="chk" style={{ padding: '10px 0', borderBottom: '1px solid var(--line)', justifyContent: 'space-between' }}><span><b className="mono">geo_radius</b><br /><small>Factory geo-fence radius in metres for inspector check-in (a vendor can have its own radius)</small></span>
+      <input type="number" min="50" max="2000" disabled={ro} value={t.geo_radius || ''} onChange={(e) => setT({ ...t, geo_radius: e.target.value })} style={{ width: 100 }} /></label>
     <p className="note mt">Phase 1: vendor &amp; client request flags OFF — Back Office creates requests. Switch ON in Phase 2.</p>
     {!ro && <button className="btn pri" disabled={busy} onClick={() => save({ a: 'toggles', ...t })}>Save toggles</button>}</div>
     <div className="card"><h2 className="mb">Automation rules (built in)</h2><ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>

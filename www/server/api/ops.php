@@ -28,8 +28,10 @@ api('GET', 'jobs/assign', R_INT, function () {
     $job = job_load((int)in_('id')); if (!$job) fail('Not found', 404);
     $date = $job['scheduled_date'] ?: ($job['requested_date'] ?: today());
     $team = all("SELECT u.id, u.name, u.emp_code, u.location, (SELECT COUNT(*) FROM qc_jobs j WHERE j.inspector_id=u.id AND j.scheduled_date=? AND j.status IN ('ASSIGNED','IN_PROGRESS') AND j.id<>?) busy FROM users u WHERE u.role='inspector' AND u.status='ACTIVE' ORDER BY u.emp_code", [$date, $job['id']]);
-    foreach ($team as &$t) $t['near'] = $t['location'] && stripos($job['vendor_address'] . ' ' . $job['location'], (string)$t['location']) !== false;
-    return ['job' => $job, 'date' => $date, 'team' => $team, 'skus' => (int)val('SELECT COUNT(*) FROM qc_items WHERE job_id=?', [$job['id']]), 'split' => flag('allow_job_split')];
+    foreach ($team as &$t) { $t['near'] = $t['location'] && stripos($job['vendor_address'] . ' ' . $job['location'], (string)$t['location']) !== false; $t['st'] = insp_status((int)$t['id'], $date, (int)$job['id']); }
+    unset($t);
+    usort($team, fn($a, $b) => (['AVAILABLE' => 0, 'ASSIGNED' => 1, 'ONSITE' => 2, 'LEAVE' => 3][$a['st']['code']] <=> ['AVAILABLE' => 0, 'ASSIGNED' => 1, 'ONSITE' => 2, 'LEAVE' => 3][$b['st']['code']]) ?: strcmp((string)$a['emp_code'], (string)$b['emp_code']));
+    return ['job' => $job, 'date' => $date, 'team' => $team, 'unassign_ok' => $job['inspector_id'] ? unassign_block($job) === null : true, 'is_sa' => is_role('super_admin'), 'skus' => (int)val('SELECT COUNT(*) FROM qc_items WHERE job_id=?', [$job['id']]), 'split' => flag('allow_job_split')];
 });
 
 api('GET', 'schedule', [...R_INT, 'vendor', 'client'], function () {
@@ -219,6 +221,15 @@ api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], fu
     $ids = array_values(array_unique(array_map('intval', (array)in_('ids', []))));
     $ins = (int)in_('inspector_id'); $date = in_('date') ?: null;
     if (!$ids) fail('Select at least one job.');
+    if (in_('unassign')) {   // bulk: move selected jobs back to the Unassigned pool
+        $done = 0; $skip = [];
+        foreach ($ids as $id) { $job = job_load($id); if (!$job || !$job['inspector_id']) continue;
+            if ($why = unassign_block($job, (bool)in_('force'))) { $skip[] = $job['job_no']; continue; }
+            unassign_job($job); $done++; }
+        return ['ok' => true, 'message' => "$done job(s) moved to Unassigned" . ($skip ? ' · not changed (inspection started / submitted): ' . implode(', ', array_slice($skip, 0, 10)) . (is_role('super_admin') ? ' — use force to override' : '') : '') . '.'];
+    }
+    if (!$ins) fail('Select an inspector (or use Unassign selected).');
+    if ($ins && ($lv = on_leave($ins, (string)($date ?: today())))) fail("This inspector is on leave that day ($lv).");
     $ip = $ins ? one("SELECT id, name, emp_code FROM users WHERE id=? AND role='inspector' AND status='ACTIVE'", [$ins]) : null;
     if ($ins && !$ip) fail('Invalid inspector');
     $done = 0; $skip = []; $pos = [];

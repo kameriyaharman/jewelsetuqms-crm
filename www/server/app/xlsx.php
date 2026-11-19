@@ -117,3 +117,45 @@ function xlsx_write(array $rows, string $sheetName = 'Sheet1'): string {
     $z->close(); $out = file_get_contents($tmp); unlink($tmp); return $out;
 }
 const IMPORT_COLS = ['Vendor', 'PO No', 'SKU', 'Image', 'Client Style Ref', 'Stone / Setting', 'Product', 'Order qty', 'Ready qty', 'QC scope', 'Metal', 'Plating', 'Weight', 'Length', 'Lock', 'Stamping', 'Requested date', 'Spec file'];
+
+/**
+ * Multi-sheet .xlsx writer. $sheets = ['Sheet name' => rows]. Row $hdr of each sheet is the column header.
+ * Styling: row 0 = title, a single-cell UPPERCASE row = section title (next row is a header), TOTAL rows bold on gold.
+ */
+function xlsx_book(array $sheets, int $hdr = 0): string {
+    $esc = fn($s) => htmlspecialchars((string)$s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    $colL = function ($i) { $s = ''; $i++; while ($i > 0) { $m = ($i - 1) % 26; $s = chr(65 + $m) . $s; $i = intdiv($i - 1, 26); } return $s; };
+    $tmp = tempnam(sys_get_temp_dir(), 'xl'); $z = new ZipArchive(); $z->open($tmp, ZipArchive::OVERWRITE);
+    $ov = ''; $wb = ''; $rels = ''; $n = 0;
+    foreach ($sheets as $name => $rows) {
+        $n++; $data = ''; $nextHdr = $hdr; $maxc = 1;
+        foreach (array_values($rows) as $ri => $r) {
+            $vals = array_values($r); $maxc = max($maxc, count($vals));
+            $first = (string)($vals[0] ?? '');
+            $st = 0;
+            if ($ri === 0) $st = 2;
+            elseif ($ri === $nextHdr) $st = 1;
+            elseif (count($vals) === 1 && $first !== '' && strtoupper($first) === $first) { $st = 2; $nextHdr = $ri + 1; }
+            elseif (str_starts_with($first, 'TOTAL') || str_starts_with($first, 'GRAND TOTAL')) $st = 3;
+            $data .= '<row r="' . ($ri + 1) . '">';
+            foreach ($vals as $ci => $v) {
+                $ref = $colL($ci) . ($ri + 1); $s = $st ? " s=\"$st\"" : '';
+                if ($v === null || $v === '') { if ($st) $data .= "<c r=\"$ref\"$s/>"; continue; }
+                $data .= (is_int($v) || is_float($v)) ? "<c r=\"$ref\"$s><v>$v</v></c>" : "<c r=\"$ref\" t=\"inlineStr\"$s><is><t>" . $esc($v) . '</t></is></c>';
+            }
+            $data .= '</row>';
+        }
+        $cols = '<cols><col min="1" max="1" width="22" customWidth="1"/>' . ($maxc > 1 ? '<col min="2" max="' . $maxc . '" width="15" customWidth="1"/>' : '') . '</cols>';
+        $freeze = '<sheetViews><sheetView workbookViewId="0"><pane ySplit="' . ($hdr + 1) . '" topLeftCell="A' . ($hdr + 2) . '" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>';
+        $z->addFromString("xl/worksheets/sheet$n.xml", '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' . $freeze . $cols . '<sheetData>' . $data . '</sheetData></worksheet>');
+        $ov .= "<Override PartName=\"/xl/worksheets/sheet$n.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>";
+        $wb .= '<sheet name="' . $esc(mb_substr(preg_replace('#[\\\\/?*\[\]:]#', ' ', (string)$name), 0, 31)) . "\" sheetId=\"$n\" r:id=\"rId$n\"/>";
+        $rels .= "<Relationship Id=\"rId$n\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet$n.xml\"/>";
+    }
+    $z->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' . $ov . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+    $z->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    $z->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' . $wb . '</sheets></workbook>');
+    $z->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . $rels . '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    $z->addFromString('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="13"/><color rgb="FF0F3D45"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F3D45"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF6EED9"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="4"><xf/><xf fontId="1" fillId="2" applyFont="1" applyFill="1"/><xf fontId="2" applyFont="1"/><xf fontId="3" fillId="3" applyFont="1" applyFill="1"/></cellXfs></styleSheet>');
+    $z->close(); $out = file_get_contents($tmp); unlink($tmp); return $out;
+}

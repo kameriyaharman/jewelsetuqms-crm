@@ -43,7 +43,7 @@ export default function RequestView() {
               {d.items.map((i) => { const pub = i.status === 'APPROVED'; return <Fragment key={i.id}><tr>
                 <td>{i.parent_id ? <span className="muted" style={{ paddingLeft: 18 }}>↳</span> : <Thumb src={i.img} size={56} alt={i.sku} />}</td><td><b className="mono">{i.sku}</b>{(i.parent_id || i.line?.lots > 1) && <> <span className="pill">Lot {i.lot_seq || 1}{i.insp_date ? ' · ' + fdate(i.insp_date, 'd M') : ''}</span></>}
                   {i.target_weight && !i.parent_id && <><br /><small className="muted" style={{ whiteSpace: 'nowrap' }}>{i.target_weight}</small></>}{i.scope_label && <><br /><small className="pill">{i.scope_label}</small></>}
-                  {i.line && (i.line.lots > 1 || !i.line.complete || i.line.closed) && <div className="cum"><span>Order {num(i.line.order)}</span><span className="ok">OK {num(i.line.accepted)}</span><span className={i.line.pending ? 'p' : ''}>{i.line.closed ? 'Force closed' : `Pending ${num(i.line.pending)}`}</span></div>}
+                  {i.line && (i.line.lots > 1 || (i.line.accepted > 0 && !i.line.complete) || i.line.closed) && <div className="cum"><span>Order {num(i.line.order)}</span><span className="ok">OK {num(i.line.accepted)}</span><span className={i.line.pending ? 'p' : ''}>{i.line.closed ? 'Force closed' : `Pending ${num(i.line.pending)}`}</span></div>}
                   {i.edited && <><br /><small className="muted" title="Last edit">✎ {i.edited.by} · {fdt(i.edited.at)}</small></>}</td><td>{i.product}</td><td>{i.style_ref || '—'}<br /><small>{i.stone_setting}</small></td><td>{i.metal}<br /><small>{i.plating}</small></td>
                 <td className="num">{num(i.order_qty)}</td><td className="num">{num(i.ready_qty)}</td><td className="num">{num(i.insp_qty)}</td><td className="num">{i.status === 'PENDING' ? '—' : num(i.rejected_qty)}</td>
                 <td><Badge s={i.status} />{i.hold_status === 'PENDING' && <><br /><small>waiting {i.hold_for}</small></>}</td>
@@ -66,12 +66,14 @@ export default function RequestView() {
             {d.emails.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{e.subject}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table></div>}
         </div>
         <div>
-          {c.assign && opts.data?.inspectors && <AssignBox job={j} inspectors={opts.data.inspectors} split={c.split} busy={busy} onAssign={(f) => act({ act: 'assign', ...f })} />}
+          {c.assign && opts.data?.inspectors && <AssignBox job={j} inspectors={opts.data.inspectors} split={c.split} busy={busy} onAssign={(f) => act({ act: 'assign', ...f })} isSA={me.user.role === 'super_admin'} />}
           {c.report_actions && <div className="card"><h2 className="mb">Report actions</h2><div className="stack">
             <button className="btn block" disabled={busy} onClick={() => act({ act: 'email_job' })}><Icon n="mail" /> Re-send PO-wise report</button>
             {c.finalize && <button className="btn gold block" disabled={busy} onClick={() => act({ act: 'finalize' })}>Generate PDF &amp; email</button>}
             {c.close && <button className="btn pri block" disabled={busy} onClick={() => act({ act: 'close' })}>Close job</button>}
           </div></div>}
+          {d.checkins?.length > 0 && <div className="card"><h2 className="mb">Factory check-ins</h2>{d.checkins.map((c, i) => <div key={i} style={{ fontSize: 13, padding: '5px 0', borderBottom: '1px solid var(--line)' }}>
+            {c.out_at ? '⚪' : '🔵'} <b>{c.emp_code}</b> {c.name} · in {fdt(c.at)}{c.out_at ? ' · out ' + fdt(c.out_at) : ' · on-site now'}<br /><small className={+c.verified ? 'ok-t' : 'muted'}>{+c.verified ? `GPS verified ✓ (${c.dist_m} m from factory pin)` : 'Factory pin not set — location sent to Admin'}</small></div>)}</div>}
           {j.status === 'PARTIAL' && <div className="card" style={{ borderColor: '#f0c79a' }}><h2 className="mb">Partial QC done — job open</h2>
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>All lots so far are approved, but some SKUs have not reached their order qty. Add the next QC lot when the vendor presents the balance / repaired pieces, or force close if the client accepts a short shipment.</p>
             {d.items.filter((i) => i.line && !i.line.complete).map((i) => <div key={i.id} className="cum" style={{ marginBottom: 6 }}><b className="mono">{i.sku}</b><span>Order {num(i.line.order)}</span><span className="ok">OK {num(i.line.accepted)}</span><span className="p">Pending {num(i.line.pending)}</span></div>)}</div>}
@@ -133,14 +135,16 @@ function EditDesign({ row, onClose, onSaved }) {
   </Modal>;
 }
 
-function AssignBox({ job, inspectors, split, busy, onAssign }) {
+function AssignBox({ job, inspectors, split, busy, onAssign, isSA }) {
   const F = useForm({ inspector_id: job.inspector_id || '', inspector2_id: job.inspector2_id || '', date: job.scheduled_date || job.requested_date || '', notify_vendor: true });
   return <div className="card"><h2 className="mb">{job.inspector_id ? 'Reassign inspector' : 'Assign inspector'}</h2>
     <form onSubmit={(e) => { e.preventDefault(); onAssign(F.f); }}>
-      <div className="f"><label>Inspector</label><Sel value={F.f.inspector_id} onChange={(v) => F.set('inspector_id', v)} options={inspectors.map((i) => [i.id, i.label])} blank="Select inspector" required /></div>
+      <div className="f"><label>Inspector</label><Sel value={F.f.inspector_id} onChange={(v) => F.set('inspector_id', v)} options={inspectors.map((i) => [i.id, i.label])} blank={job.inspector_id ? '— Unassigned (move to pending pool) —' : 'Select inspector'} /></div>
+      {job.inspector_id && !F.f.inspector_id && <p className="note" style={{ fontSize: 12 }}>Saving without an inspector moves this job back to the Unassigned pool and removes it from the inspector's app. Only allowed while not yet started{isSA ? ' — tick force to override.' : '.'}</p>}
+      {job.inspector_id && !F.f.inspector_id && isSA && <label className="chk f" style={{ color: 'var(--ruby)' }}><input type="checkbox" checked={!!F.f.force} onChange={(e) => F.set('force', e.target.checked)} /> Force (inspection already started)</label>}
       {split && <div className="f"><label>Second inspector (split large job)</label><Sel value={F.f.inspector2_id} onChange={(v) => F.set('inspector2_id', v)} options={inspectors.map((i) => [i.id, i.label])} blank="—" /></div>}
       <div className="f"><label>QC date</label><input type="date" {...F.bind('date')} /></div>
       <label className="chk f"><input type="checkbox" checked={F.f.notify_vendor} onChange={(e) => F.set('notify_vendor', e.target.checked)} /> Notify vendor for gate entry</label>
-      <button className="btn pri block" disabled={busy}>ASSIGN INSPECTOR</button>
+      <button className="btn pri block" disabled={busy || (!F.f.inspector_id && !job.inspector_id)}>{F.f.inspector_id || !job.inspector_id ? 'ASSIGN INSPECTOR' : 'SAVE · MOVE TO UNASSIGNED'}</button>
     </form></div>;
 }

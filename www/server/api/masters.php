@@ -13,6 +13,7 @@ api('GET', 'dashboard', R_INT, function () {
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items WHERE status IN ('SUBMITTED','UNDER_REVIEW','RETURNED')"),
         'review' => (int)val("SELECT COUNT(*) FROM qc_items WHERE status IN ('SUBMITTED','UNDER_REVIEW')"),
         'open_jobs' => (int)val("SELECT COUNT(*) FROM qc_jobs WHERE status='PARTIAL'"),
+        'team_live' => array_map(fn($u) => $u + ['st' => insp_status((int)$u['id'], today())], all("SELECT id, emp_code, name FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code")),
         'open_bal' => array_sum(array_map(function ($j) { $p = 0; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$j['id']]) as $x) $p += line_stats($j, (int)$x['id'])['pending']; return $p; }, all("SELECT * FROM qc_jobs WHERE status='PARTIAL'"))),
         'trend' => month_trend(approved_items()), 'today' => $today, 'upcoming' => $up];
 });
@@ -65,6 +66,7 @@ api('GET', 'vendors', [...R_INT, 'client'], function () {
     if ($id = (int)in_('id')) {
         $sel = one('SELECT * FROM vendors WHERE id=?', [$id]);
         if ($sel && role() === 'client' && !one('SELECT 1 FROM client_vendor WHERE client_id=? AND vendor_id=?', [user()['client_id'], $id])) $sel = null;
+        if ($sel && $sel['geo_pending_by']) $sel['geo_pending_by_code'] = val('SELECT emp_code FROM users WHERE id=?', [$sel['geo_pending_by']]);
         if ($sel) {
             $items = $vs[$id] ?? []; if (role() === 'client') $items = array_values(array_filter($items, fn($i) => $i['client_id'] == user()['client_id']));
             $sel['stats'] = sum_items($items);
@@ -80,6 +82,11 @@ api('POST', 'vendors/save', ['super_admin', 'back_office'], function () {
     $id = (int)in_('id');
     $d = ['code' => strtoupper(trim((string)in_('code'))), 'short_code' => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)in_('short_code'))) ?: null, 'name' => trim((string)in_('name')),
         'contact' => in_('contact'), 'email' => in_('email'), 'phone' => in_('phone'), 'ho_email' => in_('ho_email'), 'address' => in_('address'), 'location' => in_('location'), 'status' => in_('status', 'ACTIVE')];
+    if (in_('geo_lat') !== null) {
+        $la = trim((string)in_('geo_lat')); $lo = trim((string)in_('geo_lng'));
+        if (($la !== '' || $lo !== '') && (!is_numeric($la) || !is_numeric($lo) || abs((float)$la) > 90 || abs((float)$lo) > 180)) fail('Factory GPS pin: enter valid latitude and longitude (e.g. 26.8467, 75.8022).');
+        $d['geo_lat'] = $la !== '' ? $la : null; $d['geo_lng'] = $lo !== '' ? $lo : null; $d['geo_radius'] = (int)in_('geo_radius') ?: null;
+    }
     if (!$d['code'] || !$d['name']) fail('Vendor code and name are required.');
     if (one('SELECT id FROM vendors WHERE code=? AND id<>?', [$d['code'], $id])) fail('Vendor code already exists.');
     if ($id) update('vendors', $d, 'id=?', [$id]); else { $d['created_at'] = now(); $id = insert('vendors', $d); }
@@ -122,7 +129,8 @@ api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
     $perf = []; foreach (all("SELECT id, name, emp_code FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code") as $u) $perf[] = $u + inspector_kpis((int)$u['id'], date('Y-m-01'));
     $sel = null;
     if ($id = (int)in_('id')) { $sel = one('SELECT id, name, email, emp_code, role, client_id, vendor_id, phone, designation, location, area, joined_on, status FROM users WHERE id=?', [$id]);
-        if ($sel && $sel['role'] === 'inspector') $sel['kpi'] = inspector_kpis($id); }
+        if ($sel && $sel['role'] === 'inspector') { $sel['kpi'] = inspector_kpis($id); $sel['leaves'] = all('SELECT * FROM leaves WHERE user_id=? AND to_date>=? ORDER BY from_date', [$id, date('Y-m-d', strtotime('-30 days'))]); } }
+    foreach ($rows as &$r) if ($r['role'] === 'inspector' && $r['status'] === 'ACTIVE') $r['live'] = insp_status((int)$r['id'], today()); unset($r);
     if (is_role('super_admin')) {
         $enc = array_column(all('SELECT id, pw_enc FROM users'), 'pw_enc', 'id');
         foreach ($rows as &$r) $r['password'] = pw_dec($enc[$r['id']] ?? null); unset($r);
@@ -157,7 +165,7 @@ const TOGGLES = ['enable_vendor_qc_request' => 'Vendors can raise QC requests fr
     'auto_email_on_approve' => 'Auto-email PO report to vendor, client HO & JEWELSETU when all SKUs are approved',
     'qc_manager_role' => 'QC Manager / HOD role active (off = Super Admin reviews, approves and gets manager alerts)',
     'inspector_new_job' => 'Inspectors can create a new QC job / add SKUs on site',
-    'import_one_job_per_design' => 'Excel import: 1 design (SKU) = 1 job card (PO no. common, PO report merges them)', 'lock_inspected_quantity' => 'Lock inspected qty for inspectors (off = inspector can edit it; Accepted + Rejected must still equal Inspected)', 'inspector_edit_after_submit' => 'Inspector can edit a report after submit (until approved)'];
+    'geo_checkin_required' => 'Inspector must GPS check-in at the vendor factory before starting inspection', 'import_one_job_per_design' => 'Excel import: 1 design (SKU) = 1 job card (PO no. common, PO report merges them)', 'lock_inspected_quantity' => 'Lock inspected qty for inspectors (off = inspector can edit it; Accepted + Rejected must still equal Inspected)', 'inspector_edit_after_submit' => 'Inspector can edit a report after submit (until approved)'];
 api('GET', 'settings', R_INT, function () {
     $t = []; foreach (TOGGLES as $k => $d) $t[] = ['key' => $k, 'label' => $d, 'on' => flag($k)];
     $cats = all('SELECT * FROM defect_categories ORDER BY sort, name');
@@ -167,7 +175,7 @@ api('GET', 'settings', R_INT, function () {
         foreach ($A as $a) { $p = aql_single($L, $a); $row['plans'][] = $p ? ['ac' => $p['ac'], 're' => $p['re'], 'n' => $p['sample']] : null; }
         $aql[] = $row; }
     $S = []; foreach (['company_name', 'company_web', 'company_tagline', 'company_contact', 'report_terms', 'report_portfolio', 'mail_transport', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_secure', 'mail_from', 'mail_from_name', 'admin_email'] as $k) $S[$k] = setting($k, '');
-    $S['smtp_pass_set'] = setting('smtp_pass') ? true : false;
+    $S['smtp_pass_set'] = setting('smtp_pass') ? true : false; $S['geo_radius'] = setting('geo_radius', '250');
     return ['can_edit' => is_role('super_admin'), 'toggles' => $t, 'settings' => $S, 'categories' => $cats,
         'defects' => all('SELECT d.*, c.name category FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name'),
         'checkpoints' => all('SELECT k.*, c.code client_code FROM checkpoints k LEFT JOIN clients c ON c.id=k.client_id ORDER BY k.client_id, k.sort, k.id'),
@@ -178,7 +186,7 @@ api('GET', 'settings', R_INT, function () {
 api('POST', 'settings/save', ['super_admin'], function () {
     $a = (string)in_('a');
     switch ($a) {
-        case 'toggles': foreach (TOGGLES as $k => $_) set_setting($k, in_($k) ? '1' : '0'); audit('settings', 0, 'TOGGLES'); break;
+        case 'toggles': foreach (TOGGLES as $k => $_) set_setting($k, in_($k) ? '1' : '0'); if ((int)in_('geo_radius') > 0) set_setting('geo_radius', (string)max(50, min(2000, (int)in_('geo_radius')))); audit('settings', 0, 'TOGGLES'); break;
         case 'email': foreach (['mail_transport', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_secure', 'mail_from', 'mail_from_name', 'admin_email'] as $k) set_setting($k, trim((string)in_($k, '')));
             if ((string)in_('smtp_pass', '') !== '') set_setting('smtp_pass', (string)in_('smtp_pass')); break;
         case 'testmail': require_once ROOT . '/app/mailer.php'; [$st, $er] = send_mail((string)in_('to'), 'Q-TRACK test email', '<p>Email settings work ✓</p>');
@@ -227,7 +235,8 @@ api('GET', 'vendor/dash', ['vendor'], function () {
     return ['vendor' => one('SELECT name FROM vendors WHERE id=?', [$vid]), 'counts' => ['submitted' => $c(['REQUESTED']), 'scheduled' => $c(['SCHEDULED', 'ASSIGNED']),
         'progress' => $c(['IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED']), 'completed' => $c(['EMAILED', 'CLOSED'])], 'rate' => sum_items(approved_items())['rate'],
         'holds' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE j.vendor_id=? AND i.hold_status='PENDING' AND i.hold_for='vendor'", [$vid]),
-        'jobs' => job_rows_with_result('j.vendor_id=? AND (j.status<>\'DRAFT\' OR j.created_by=?)', [$vid, user()['id']], 12), 'next' => $next, 'latest' => $latest];
+        'jobs' => job_rows_with_result('j.vendor_id=? AND (j.status<>\'DRAFT\' OR j.created_by=?)', [$vid, user()['id']], 12), 'next' => $next, 'latest' => $latest,
+        'arrivals' => all("SELECT c.at, c.out_at, c.verified, c.dist_m, u.emp_code, u.name, u.phone, j.po_no, j.job_no FROM checkins c JOIN users u ON u.id=c.user_id LEFT JOIN qc_jobs j ON j.id=c.job_id WHERE c.vendor_id=? AND c.at>=? ORDER BY c.at DESC", [$vid, today() . ' 00:00:00'])];
 });
 function job_rows_with_result(string $where, array $p, int $limit): array {
     $rows = all("SELECT j.*, " . img_job_sql() . " img, c.code client_code, v.name vendor_name, (SELECT SUM(ready_qty) FROM qc_items i WHERE i.job_id=j.id) qty,
@@ -236,3 +245,21 @@ function job_rows_with_result(string $where, array $p, int $limit): array {
     foreach ($rows as &$r) $r['scope_label'] = scope_label($r);
     return $rows;
 }
+
+/* ----- vendor factory GPS pin captured by an inspector: Admin verifies ----- */
+api('POST', 'vendors/geo_verify', ['super_admin', 'back_office', 'qc_manager'], function () {
+    $v = one('SELECT * FROM vendors WHERE id=?', [(int)in_('id')]); if (!$v || !$v['geo_pending_lat']) fail('No pending factory location for this vendor.');
+    if (in_('accept')) { update('vendors', ['geo_lat' => $v['geo_pending_lat'], 'geo_lng' => $v['geo_pending_lng'], 'geo_pending_lat' => null, 'geo_pending_lng' => null], 'id=?', [$v['id']]); audit('vendor', (int)$v['id'], 'GEO_PIN', 'factory pin', $v['geo_lat'] ? "{$v['geo_lat']},{$v['geo_lng']}" : null, "{$v['geo_pending_lat']},{$v['geo_pending_lng']}"); return ['ok' => true, 'message' => 'Factory location verified and saved.']; }
+    update('vendors', ['geo_pending_lat' => null, 'geo_pending_lng' => null], 'id=?', [$v['id']]);
+    return ['ok' => true, 'message' => 'Captured location rejected.'];
+});
+/* ----- inspector leave (blocks assignment, shows OFF / ON LEAVE) ----- */
+api('POST', 'team/leave', ['super_admin', 'qc_manager', 'back_office'], function () {
+    if ($del = (int)in_('delete')) { q('DELETE FROM leaves WHERE id=?', [$del]); audit('user', 0, 'LEAVE_REMOVED', 'leave', (string)$del, null); return ['ok' => true, 'message' => 'Leave removed.']; }
+    $uid = (int)in_('user_id'); $f = (string)in_('from'); $t = (string)(in_('to') ?: $f);
+    if (!$uid || !$f) fail('Select inspector and leave date.'); if ($t < $f) fail('To date is before from date.');
+    $id = insert('leaves', ['user_id' => $uid, 'from_date' => $f, 'to_date' => $t, 'note' => trim((string)in_('note')), 'created_by' => user()['id'], 'created_at' => now()]);
+    audit('user', $uid, 'LEAVE', 'leave', null, "$f to $t");
+    $clash = all("SELECT job_no FROM qc_jobs WHERE (inspector_id=? OR inspector2_id=?) AND scheduled_date BETWEEN ? AND ? AND status IN ('ASSIGNED','IN_PROGRESS')", [$uid, $uid, $f, $t]);
+    return ['ok' => true, 'id' => $id, 'message' => 'Leave saved.' . ($clash ? ' Note: already assigned on those days — ' . implode(', ', array_column($clash, 'job_no')) . '. Reassign or unassign them.' : '')];
+});
