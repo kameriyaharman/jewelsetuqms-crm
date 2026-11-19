@@ -55,7 +55,7 @@ api('POST', 'profile/password', R_ALL, function () {
     $u = user();
     if (!password_verify((string)in_('current'), $u['password_hash'])) fail('Current password is wrong.');
     if (strlen((string)in_('new')) < 6) fail('New password must be at least 6 characters.');
-    q('UPDATE users SET password_hash=? WHERE id=?', [password_hash((string)in_('new'), PASSWORD_DEFAULT), $u['id']]);
+    update('users', pw_fields((string)in_('new')), 'id=?', [$u['id']]);
     return ['ok' => true, 'message' => 'Password changed.'];
 });
 

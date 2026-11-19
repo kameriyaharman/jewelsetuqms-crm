@@ -41,7 +41,7 @@ function db_install(): void {
         'vendors' => "id $pk, code VARCHAR(30) NOT NULL UNIQUE, short_code VARCHAR(20), name $T NOT NULL, contact $T, email $T, phone VARCHAR(40), ho_email $T,
             address TEXT, location $T, status VARCHAR(20) DEFAULT 'ACTIVE', created_at $DT",
         'client_vendor' => "client_id INT NOT NULL, vendor_id INT NOT NULL, PRIMARY KEY (client_id, vendor_id)",
-        'users' => "id $pk, name $T NOT NULL, email $T, emp_code VARCHAR(40), password_hash $T NOT NULL, role VARCHAR(30) NOT NULL,
+        'users' => "id $pk, name $T NOT NULL, email $T, emp_code VARCHAR(40), password_hash $T NOT NULL, pw_enc TEXT NULL, role VARCHAR(30) NOT NULL,
             client_id INT NULL, vendor_id INT NULL, phone VARCHAR(40), designation $T NULL, location $T, area $T, joined_on $D NULL,
             status VARCHAR(20) DEFAULT 'ACTIVE', last_login $DT NULL, created_at $DT",
         'product_categories' => "id $pk, name $T NOT NULL",
@@ -90,7 +90,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 5) return;
+    if ($ver >= 6) return;
+    if ($ver === 5) { db_migrate_v6(); return; }
     if ($ver === 4) { db_migrate_v5(); return; }
     if ($ver === 3) { db_migrate_v4(); return; }
     if ($ver === 2) { db_migrate_v3(); return; }
@@ -138,6 +139,14 @@ function db_migrate_v5(): void {
     set_setting('import_one_job_per_design', '1');
     set_setting('require_defect_photo', '0');
     set_setting('schema_version', '5');
+    db_migrate_v6();
+}
+/** v6: encrypted copy of each password so the Super Admin can view it; fill it for users still on a known default password. */
+function db_migrate_v6(): void {
+    try { db()->query('SELECT pw_enc FROM users LIMIT 1'); } catch (Throwable $e) { db()->exec('ALTER TABLE users ADD COLUMN pw_enc TEXT NULL'); }
+    foreach (all('SELECT id, password_hash FROM users WHERE pw_enc IS NULL') as $u)
+        foreach (['Admin@123', 'Demo@123'] as $p) if (password_verify($p, $u['password_hash'])) { q('UPDATE users SET pw_enc=? WHERE id=?', [pw_enc($p), $u['id']]); break; }
+    set_setting('schema_version', '6');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

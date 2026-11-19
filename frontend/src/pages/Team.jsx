@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Sel, useAction, useApi, useForm, useToast } from '../app/ui';
 import { fdate, fdt, initials } from '../app/util';
 
 const TABS = [['internal', 'All staff'], ['inspector', 'Inspectors'], ['qc_manager', 'Managers'], ['back_office', 'Back office'], ['portal', 'Client / vendor logins']];
@@ -22,8 +22,8 @@ export default function Team() {
     <Loader q={q}>{(d) => <div className="grid g-73">
       <div className="card">
         <div className="tabs">{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l}</a>)}</div>
-        <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th><th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
-          {d.rows.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp({ f, id: u.id })}><td className="mono">{u.emp_code || u.email}</td>
+        <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th>{d.show_pw && <th>Password</th>}<th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
+          {d.rows.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp({ f, id: u.id })}><td className="mono">{u.emp_code || u.email}</td>{d.show_pw && <td onClick={(e) => e.stopPropagation()}><Pw value={u.password} /></td>}
             <td><span className="avatar">{initials(u.name)}</span>{u.name}</td><td><Badge s={u.role} label={d.roles[u.role]} /></td><td>{u.ccode || u.vname || u.location}</td><td>{u.last_login ? fdt(u.last_login) : '—'}</td><td><Badge s={u.status} /></td></tr>)}
         </tbody></table></div>
         {!!d.perf.length && <><h2 className="mb mt">Team this month</h2><table className="t"><thead><tr><th>Inspector</th><th className="num">Done</th><th className="num">Avg time</th><th className="num">Return %</th><th className="num">1st-time approval</th></tr></thead><tbody>
@@ -36,7 +36,8 @@ export default function Team() {
         {sel && !edit ? <div className="card"><div className="card-h"><h2>Profile — {sel.emp_code || sel.name}</h2>{canEdit && <a href="#" onClick={(e) => { e.preventDefault(); setSp({ f, id: sel.id, edit: 1 }); }}>Edit</a>}</div>
           <div className="kv"><div><small>Name</small><b>{sel.name}</b></div><div><small>Mobile</small><b>{sel.phone || '—'}</b></div><div><small>Email</small><b>{sel.email || '—'}</b></div>
             <div><small>Role</small><b>{d.roles[sel.role]}</b></div><div><small>Designation</small><b>{sel.designation || '—'}</b></div><div><small>Location</small><b>{sel.location || '—'}</b></div>
-            <div><small>Joining date</small><b>{fdate(sel.joined_on)}</b></div><div><small>Assigned area</small><b>{sel.area || '—'}</b></div><div><small>Status</small><b><Badge s={sel.status} /></b></div></div></div>
+            <div><small>Joining date</small><b>{fdate(sel.joined_on)}</b></div><div><small>Assigned area</small><b>{sel.area || '—'}</b></div><div><small>Status</small><b><Badge s={sel.status} /></b></div></div>
+          {d.show_pw && <LoginBox u={sel} url={d.login_url} onReset={() => setSp({ f, id: sel.id, edit: 1 })} />}</div>
           : canEdit && edit ? <div className="card"><h2 className="mb">{sp.has('new') ? 'Add team member / portal login' : 'Edit member'}</h2>
             <form onSubmit={save}>
               <div className="f"><label>Role</label><Sel value={F.f.role} onChange={(v) => F.set('role', v)} options={Object.entries(d.roles)} /></div>
@@ -54,4 +55,25 @@ export default function Team() {
       </div>
     </div>}</Loader>
   </Page>;
+}
+
+/** Password cell: hidden by default, eye to show, copy. */
+function Pw({ value }) {
+  const [show, setShow] = useState(false); const toast = useToast();
+  if (!value) return <small className="muted" title="Set before this feature — reset it once to see it here">not saved · reset</small>;
+  return <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}><span className="mono">{show ? value : '••••••••'}</span>
+    <button type="button" className="btn sm" title={show ? 'Hide' : 'Show'} onClick={() => setShow(!show)}>{show ? '🙈' : '👁'}</button>
+    <button type="button" className="btn sm" title="Copy password" onClick={() => { navigator.clipboard?.writeText(value); toast('Password copied'); }}>⧉</button></span>;
+}
+/** Login details for Super Admin: URL, login ID, password — copy or share on WhatsApp. */
+function LoginBox({ u, url, onReset }) {
+  const toast = useToast(); const id = u.emp_code || u.email;
+  const text = `JEWELSETU Q-TRACK login\nName: ${u.name}\nLogin URL: ${url}\nLogin ID: ${id}${u.email && u.emp_code ? ` (or ${u.email})` : ''}\nPassword: ${u.password || '(reset to set a new one)'}`;
+  return <div className="note gold mt" style={{ fontSize: 13 }}><b>Login details</b>
+    <div className="kv" style={{ marginTop: 6 }}><div><small>Login URL</small><b style={{ wordBreak: 'break-all' }}>{url}</b></div><div><small>Login ID</small><b className="mono">{id}</b>{u.email && u.emp_code && <small> or {u.email}</small>}</div>
+      <div><small>Password</small><b><Pw value={u.password} /></b></div></div>
+    <div className="actions" style={{ justifyContent: 'flex-start' }}>
+      <button className="btn sm" onClick={() => { navigator.clipboard?.writeText(text); toast('Login details copied'); }}>⧉ Copy login details</button>
+      <a className="btn sm" target="_blank" rel="noreferrer" href={'https://wa.me/' + (u.phone ? u.phone.replace(/\D/g, '').replace(/^(\d{10})$/, '91$1') : '') + '?text=' + encodeURIComponent(text)}>WhatsApp</a>
+      <button className="btn sm" onClick={onReset}>Reset password</button></div></div>;
 }

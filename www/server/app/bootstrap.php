@@ -429,3 +429,26 @@ function add_lot(int $rootId, int $ready, ?string $date = null): int {
 function po_group_ids(array $job): array {
     return array_map('intval', array_column(all("SELECT id FROM qc_jobs WHERE client_id=? AND vendor_id=? AND po_no=? AND status<>'CANCELLED' ORDER BY id", [$job['client_id'], $job['vendor_id'], $job['po_no']]), 'id')) ?: [(int)$job['id']];
 }
+
+/* ---------------- viewable passwords for Super Admin ----------------
+ * Login still checks the one-way hash. A second, encrypted copy (AES-256-GCM) is kept so the
+ * Super Admin can see the current password in Team. Key: APP_KEY env var, else a random key in settings. */
+function pw_key(): string {
+    static $key = null;
+    if ($key !== null) return $key;
+    $k = getenv('APP_KEY') ?: (string)val("SELECT v FROM settings WHERE k='app_key'");
+    if ($k === '') { $k = base64_encode(random_bytes(32)); set_setting('app_key', $k); }
+    return $key = hash('sha256', $k, true);
+}
+function pw_enc(string $plain): string {
+    $iv = random_bytes(12); $tag = '';
+    $c = openssl_encrypt($plain, 'aes-256-gcm', pw_key(), OPENSSL_RAW_DATA, $iv, $tag);
+    return base64_encode($iv . $tag . $c);
+}
+function pw_dec(?string $enc): ?string {
+    if (!$enc) return null; $b = base64_decode($enc, true); if ($b === false || strlen($b) < 29) return null;
+    $p = openssl_decrypt(substr($b, 28), 'aes-256-gcm', pw_key(), OPENSSL_RAW_DATA, substr($b, 0, 12), substr($b, 12, 16));
+    return $p === false ? null : $p;
+}
+/** Columns to store when a password is set. */
+function pw_fields(string $plain): array { return ['password_hash' => password_hash($plain, PASSWORD_DEFAULT), 'pw_enc' => pw_enc($plain)]; }

@@ -45,7 +45,7 @@ api('POST', 'clients/save', ['super_admin', 'back_office'], function () {
     $msg = 'Client saved.';
     if (in_('create_login') && $d['email'] && !one('SELECT id FROM users WHERE LOWER(email)=LOWER(?)', [$d['email']])) {
         $pw = (string)(in_('login_pw') ?: 'Client@' . rand(1000, 9999));
-        insert('users', ['name' => $d['contact'] ?: $d['name'], 'email' => $d['email'], 'password_hash' => password_hash($pw, PASSWORD_DEFAULT), 'role' => 'client', 'client_id' => $id, 'status' => 'ACTIVE', 'created_at' => now()]);
+        insert('users', ['name' => $d['contact'] ?: $d['name'], 'email' => $d['email'], 'password_hash' => password_hash($pw, PASSWORD_DEFAULT), 'pw_enc' => pw_enc($pw), 'role' => 'client', 'client_id' => $id, 'status' => 'ACTIVE', 'created_at' => now()]);
         $msg .= " Portal login: {$d['email']} / $pw";
     }
     return ['ok' => true, 'id' => $id, 'message' => $msg];
@@ -89,7 +89,7 @@ api('POST', 'vendors/save', ['super_admin', 'back_office'], function () {
     $msg = 'Vendor saved.';
     if (in_('create_login') && !one('SELECT id FROM users WHERE UPPER(emp_code)=?', [$d['code']])) {
         $pw = (string)(in_('login_pw') ?: 'Vendor@' . rand(1000, 9999));
-        insert('users', ['name' => $d['name'], 'email' => $d['email'], 'emp_code' => $d['code'], 'password_hash' => password_hash($pw, PASSWORD_DEFAULT), 'role' => 'vendor', 'vendor_id' => $id, 'status' => 'ACTIVE', 'created_at' => now()]);
+        insert('users', ['name' => $d['name'], 'email' => $d['email'], 'emp_code' => $d['code'], 'password_hash' => password_hash($pw, PASSWORD_DEFAULT), 'pw_enc' => pw_enc($pw), 'role' => 'vendor', 'vendor_id' => $id, 'status' => 'ACTIVE', 'created_at' => now()]);
         $msg .= " Portal login: {$d['code']} / $pw";
     }
     return ['ok' => true, 'id' => $id, 'message' => $msg];
@@ -123,7 +123,12 @@ api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
     $sel = null;
     if ($id = (int)in_('id')) { $sel = one('SELECT id, name, email, emp_code, role, client_id, vendor_id, phone, designation, location, area, joined_on, status FROM users WHERE id=?', [$id]);
         if ($sel && $sel['role'] === 'inspector') $sel['kpi'] = inspector_kpis($id); }
-    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES];
+    if (is_role('super_admin')) {
+        $enc = array_column(all('SELECT id, pw_enc FROM users'), 'pw_enc', 'id');
+        foreach ($rows as &$r) $r['password'] = pw_dec($enc[$r['id']] ?? null); unset($r);
+        if ($sel) $sel['password'] = pw_dec($enc[$sel['id']] ?? null);
+    }
+    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES, 'show_pw' => is_role('super_admin'), 'login_url' => (isset($_SERVER['HTTP_HOST']) ? ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] : '') . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php')), '/') . '/login'];
 });
 api('POST', 'team/save', ['super_admin'], function () {
     $id = (int)in_('id'); $role = (string)in_('role');
@@ -138,9 +143,9 @@ api('POST', 'team/save', ['super_admin'], function () {
     if ($d['emp_code'] && one('SELECT id FROM users WHERE UPPER(emp_code)=? AND id<>?', [$d['emp_code'], $id])) fail('Login code already used.');
     if ($id === (int)user()['id'] && ($d['status'] !== 'ACTIVE' || $role !== 'super_admin')) fail('You cannot deactivate or demote yourself.');
     $msg = 'Team member saved.';
-    if (in_('password')) $d['password_hash'] = password_hash((string)in_('password'), PASSWORD_DEFAULT);
+    if (in_('password')) $d = pw_fields((string)in_('password')) + $d;
     if ($id) update('users', $d, 'id=?', [$id]);
-    else { if (empty($d['password_hash'])) { $pw = 'Js@' . rand(10000, 99999); $d['password_hash'] = password_hash($pw, PASSWORD_DEFAULT); $msg .= " Initial password: $pw"; } $d['created_at'] = now(); $id = insert('users', $d); }
+    else { if (empty($d['password_hash'])) { $pw = 'Js@' . rand(10000, 99999); $d = pw_fields($pw) + $d; $msg .= " Initial password: $pw"; } $d['created_at'] = now(); $id = insert('users', $d); }
     audit('user', $id, 'SAVE');
     return ['ok' => true, 'id' => $id, 'message' => $msg];
 });
