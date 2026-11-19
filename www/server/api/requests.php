@@ -53,6 +53,7 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
     unset($i);
     return ['job' => $job, 'items' => $items, 'attachments' => all('SELECT * FROM attachments WHERE job_id=? ORDER BY id', [$job['id']]), 'log' => $log,
         'emails' => $cv ? [] : all('SELECT * FROM email_log WHERE job_id=? ORDER BY id DESC LIMIT 20', [$job['id']]), 'can' => $can,
+        'manuals' => job_manuals($job),
         'checkins' => all('SELECT c.at, c.out_at, c.verified, c.dist_m, u.emp_code, u.name FROM checkins c JOIN users u ON u.id=c.user_id WHERE c.job_id=? ORDER BY c.at DESC', [$job['id']])];
 });
 

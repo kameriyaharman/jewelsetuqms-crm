@@ -1,3 +1,4 @@
+import { ManualList } from './Manuals';
 import { useState, Fragment } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
@@ -14,7 +15,7 @@ export default function RequestView() {
   const { id } = useParams(); const { me, refresh } = useAuth(); const r = me.user.role; const nav = useNavigate();
   const q = useApi('request', { id }); const opts = useApi('options'); const { run, busy } = useAction();
   const act = async (body, confirmMsg) => { if (confirmMsg && !window.confirm(confirmMsg)) return; const x = await run(() => post('job/action', { id, ...body })); if (x) { q.reload(); refresh(); } };
-  const [sched, setSched] = useState(false); const [edit, setEdit] = useState(null); const [lot, setLot] = useState(null); const [fc, setFc] = useState(null);
+  const [sched, setSched] = useState(false); const [edit, setEdit] = useState(null); const [lot, setLot] = useState(null); const [fc, setFc] = useState(null); const [man, setMan] = useState(false);
   return <Loader q={q}>{(d) => { const j = d.job, c = d.can; const cur = j.status === 'RETURNED' ? 'UNDER_REVIEW' : j.status === 'DRAFT' ? 'REQUESTED' : j.status;
     return <Page title={(j.job_no || j.req_no) + ' · PO ' + j.po_no} sub={`${j.client_name} — ${j.vendor_name} · ${j.source} · created ${fdt(j.created_at)}`}
       actions={<>{c.edit && <Link className="btn" to={`/request/${j.id}/edit`}>Edit</Link>}{c.schedule && ['REQUESTED', 'DRAFT'].includes(j.status) && <button className="btn pri" onClick={() => setSched(!sched)}>Schedule</button>}
@@ -37,6 +38,7 @@ export default function RequestView() {
             {(j.specs || j.special_req) && <div className="note mt">{j.specs && <><b>Specs:</b> {j.specs}<br /></>}{j.special_req && <><b>Special requirement:</b> {j.special_req}</>}</div>}
             {!!d.attachments.length && <div className="actions mt">{d.attachments.map((a) => <a key={a.id} className="pill" target="_blank" rel="noreferrer" href={fileUrl(a.path)}>📎 {a.name}</a>)}</div>}
           </div>
+          {d.manuals?.length > 0 && <div className="manbanner"><span>📘 <b>{d.manuals.length} active client QC manual{d.manuals.length > 1 ? 's' : ''} / special instruction{d.manuals.length > 1 ? 's' : ''}</b> available for {j.client_code}{d.manuals.some((m) => m.priority === 'HIGH') ? ' · includes mandatory' : ''}</span><button className="btn sm pri" onClick={() => setMan(true)}>View / Download</button></div>}
           <div className="card"><div className="card-h"><h2>SKUs / designs ({d.items.filter((i) => !i.parent_id).length}){d.items.some((i) => i.parent_id) && <small className="muted"> · {d.items.length} QC lots</small>}</h2>
             {c.edit_design && <button className="btn sm" onClick={() => setEdit({ job_id: j.id, scope: 'JOB', product: '', metal: '925 Silver' })}><Icon n="plus" /> Add design</button>}</div>
             <div className="tbl-wrap"><table className="t"><thead><tr><th>Image</th><th>SKU</th><th>Product</th><th>Style ref / stone</th><th>Metal / plating</th><th className="num">Order</th><th className="num">Ready</th><th className="num">Insp. qty</th><th className="num">Rej.</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
@@ -84,6 +86,7 @@ export default function RequestView() {
           <button className="btn ghost" onClick={() => nav(-1)}>‹ Back</button>
         </div>
       </div>
+      <Modal open={man} title={`QC manuals & instructions · ${j.client_code} · ${j.vendor_name}`} onClose={() => setMan(false)} wide>{man && <ManualList rows={d.manuals} compact />}</Modal>
       <EditDesign row={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); q.reload(); refresh(); }} />
       <Modal open={!!lot} title={lot ? 'Add next QC lot · ' + lot.sku : ''} onClose={() => setLot(null)}>
         {lot && <><p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>Pending balance <b>{num(lot.pending)}</b> pcs (not yet presented + repaired). Client, vendor, PO, SKU specs, images and files are copied — the inspector enters only this lot's quantities, defects and photos. Order qty stays {num(d.items.find((x) => x.id === lot.item_id)?.line?.order)}.</p>

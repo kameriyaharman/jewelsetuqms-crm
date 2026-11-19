@@ -90,8 +90,17 @@ function initials(string $n): string {
 }
 function json_out($data, int $code = 200): never {
     http_response_code($code); header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: no-store');
-    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
+    $body = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if (empty($GLOBALS['__after'])) { echo $body; exit; }
+    // finish the response first, then run background work (e.g. the daily summary) without making the user wait
+    ignore_user_abort(true); header('Content-Length: ' . strlen($body)); header('Connection: close');
+    echo $body; while (ob_get_level() > 0) @ob_end_flush(); flush();
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    if (function_exists('session_write_close')) @session_write_close();
+    foreach ($GLOBALS['__after'] as $f) { try { $f(); } catch (Throwable $e) { error_log('[qtrack] after: ' . $e->getMessage()); } }
+    exit;
 }
+function after_response(callable $f): void { $GLOBALS['__after'][] = $f; }
 /** API error helper */
 function fail(string $msg, int $code = 422): never { json_out(['error' => $msg], $code); }
 /** merged request input: query + form + JSON body */

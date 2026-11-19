@@ -87,11 +87,14 @@ api('GET', 'file', R_ALL, function () {
         ?? one('SELECT j.* FROM item_photos ph JOIN qc_items i ON i.id=ph.item_id JOIN qc_jobs j ON j.id=i.job_id WHERE ph.path=?', [$p]);
     if ($job && !can_see_job($job)) fail('Forbidden', 403);
     $mine = str_starts_with($p, 'imports/img/') && in_array($p, array_column($_SESSION['import']['rows'] ?? [], 'img'), true);
-    if (!$job && !is_internal() && !$mine) fail('Forbidden', 403);
+    $man = null;
+    if (str_starts_with($p, 'manuals/')) { [$w, $mp] = manual_scope_sql(); $man = one("SELECT m.file_name FROM manuals m WHERE m.path=? AND $w", array_merge([$p], $mp)); if (!$man) fail('Forbidden', 403); }
+    if (!$job && !is_internal() && !$mine && !$man) fail('Forbidden', 403);
     $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp',
-        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'csv' => 'text/csv'][strtolower(pathinfo($full, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
+        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'csv' => 'text/csv', 'xls' => 'application/vnd.ms-excel',
+        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'doc' => 'application/msword'][strtolower(pathinfo($full, PATHINFO_EXTENSION))] ?? 'application/octet-stream';
     header('Content-Type: ' . $mime); header('Cache-Control: private, max-age=86400');
-    if (in_('dl')) header('Content-Disposition: attachment; filename="' . basename($full) . '"');
+    if (in_('dl')) header('Content-Disposition: attachment; filename="' . str_replace('"', '', $man['file_name'] ?? basename($full)) . '"');
     readfile($full); exit;
 });
 

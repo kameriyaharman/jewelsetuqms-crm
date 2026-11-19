@@ -127,6 +127,10 @@ export default function AppInspect() {
   ];
   const blocking = REV.filter((r) => r.st === 'miss').length;
 
+  if (D.need_checkin) return <MPage title={it.sku} back={'/app/job/' + job.id}>
+    <div className="mcard" style={{ textAlign: 'center', padding: 24 }}><div style={{ fontSize: 34 }}>📍</div><b>Check-in at the factory first</b>
+      <p className="muted" style={{ fontSize: 13 }}>Inspection of {it.sku} opens after you check-in at {job.vendor_name}.</p>
+      <Link to={'/app/job/' + job.id} className="bigbtn gold" style={{ display: 'flex', textDecoration: 'none', margin: 0 }}>GO TO CHECK-IN</Link></div></MPage>;
   return <MPage title={(D.admin ? 'Edit · ' : '') + it.sku} back={D.admin ? (['SUBMITTED', 'UNDER_REVIEW'].includes(it.status) ? '/review/' + it.id : it.status === 'APPROVED' ? '/report/' + it.id : '/request/' + job.id) : '/app/job/' + job.id} right={ed && !D.admin ? <button className="btn sm" style={{ background: '#fff3', color: '#fff', borderColor: '#fff5' }} onClick={() => setHold(true)} title="Hold for approval"><Icon n="pause" /></button> : null}>
     <div className="offbar">Offline — saved on this phone. Changes will sync when internet returns.</div>
     {it.status === 'HOLD' && <div className="note" style={{ marginBottom: 10 }}><b>⏸ ON HOLD — waiting for {it.hold_for} approval</b><br />{it.hold_reason}<br /><small>{fdt(it.hold_at)}</small><br />Continue with other SKUs; you'll get a notification when they respond.</div>}

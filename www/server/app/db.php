@@ -92,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 7) return;
+    if ($ver >= 8) return;
+    if ($ver === 7) { db_migrate_v8(); return; }
     if ($ver === 6) { db_migrate_v7(); return; }
     if ($ver === 5) { db_migrate_v6(); return; }
     if ($ver === 4) { db_migrate_v5(); return; }
@@ -164,6 +165,17 @@ function db_migrate_v7(): void {
     if (setting('geo_radius', '') === '') set_setting('geo_radius', '250');
     if (setting('geo_checkin_required', '') === '') set_setting('geo_checkin_required', '0');
     set_setting('schema_version', '7');
+    db_migrate_v8();
+}
+/** v8: client / vendor QC manuals & instructions (versioned), inspector acknowledgements, daily EOD summary; check-in first. */
+function db_migrate_v8(): void {
+    $pk = is_sqlite() ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'; $T = is_sqlite() ? 'TEXT' : 'VARCHAR(255)';
+    db()->exec("CREATE TABLE IF NOT EXISTS manuals (id $pk, group_id INT, client_id INT NOT NULL, vendor_id INT NULL, po_no $T NULL, scope VARCHAR(10) DEFAULT 'ALL', title $T, note TEXT NULL,
+        path $T NULL, file_name $T NULL, version VARCHAR(10) DEFAULT '1.0', priority VARCHAR(10) DEFAULT 'NORMAL', uploader_role VARCHAR(20), uploaded_by INT, status VARCHAR(10) DEFAULT 'ACTIVE', created_at DATETIME)");
+    db()->exec("CREATE TABLE IF NOT EXISTS manual_acks (id $pk, manual_id INT, user_id INT, job_id INT, at DATETIME)");
+    foreach (['geo_checkin_required' => '1', 'daily_summary_on' => '1', 'daily_summary_time' => '19:30', 'daily_summary_cc' => 'jewelsetu.jqc@gmail.com'] as $k => $v) set_setting($k, $v);
+    if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
+    set_setting('schema_version', '8');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

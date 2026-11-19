@@ -143,6 +143,13 @@ function Email({ d, ro, save, busy }) {
     <div className="f"><label>JEWELSETU admin copy (CC on every report)</label><input type="email" {...b('admin_email')} /></div>
     {!ro && <button className="btn pri" disabled={busy} onClick={() => save({ a: 'email', ...s })}>Save email settings</button>}
     {!ro && <><div className="hr" /><form className="filters" onSubmit={(e) => { e.preventDefault(); save({ a: 'testmail', to }); }}><input type="email" required value={to} onChange={(e) => setTo(e.target.value)} placeholder="Send test to…" /><button className="btn">Send test email</button></form></>}
+    <div className="hr" /><h2 className="mb">Daily end-of-day QC summary</h2>
+    <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>Every evening each vendor gets its own summary and each client one vendor-wise table (only those with inspections that day), with a design-wise Excel sheet. Portal alert + dashboard card too.</p>
+    <div className="fr f" style={{ alignItems: 'flex-end' }}><label className="chk"><input type="checkbox" disabled={ro} checked={s.daily_summary_on === '1'} onChange={(e) => setS({ ...s, daily_summary_on: e.target.checked ? '1' : '0' })} /> Auto-send ON</label>
+      <div><label>Send time (IST)</label><input type="time" disabled={ro} value={s.daily_summary_time || '19:30'} onChange={(e) => setS({ ...s, daily_summary_time: e.target.value })} /></div>
+      <div><label>CC (comma separated)</label><input type="text" disabled={ro} value={s.daily_summary_cc || ''} onChange={(e) => setS({ ...s, daily_summary_cc: e.target.value })} /></div></div>
+    {!ro && <button className="btn pri" disabled={busy} onClick={() => save({ a: 'daily', daily_summary_on: s.daily_summary_on === '1' ? 1 : 0, daily_summary_time: s.daily_summary_time || '19:30', daily_summary_cc: s.daily_summary_cc || '' })}>Save daily summary settings</button>}
+    <p className="muted" style={{ fontSize: 12 }}>Last sent: {d.settings.daily_summary_last || '—'}. It goes out on the first visit to Q-TRACK after the set time. On shared hosting add a cPanel cron (every 15 min) for exact timing: <span className="mono" style={{ wordBreak: 'break-all' }}>wget -qO- "{d.settings.cron_url}"</span></p>
     <h2 className="mb mt">Email history</h2>
     <table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>
       {d.emails.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{String(e.subject).slice(0, 60)}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table></div>;

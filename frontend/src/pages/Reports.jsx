@@ -1,3 +1,4 @@
+import { DailySummaryButton } from './DailySummary';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
@@ -12,7 +13,7 @@ export default function Reports() {
   const q = useApi('reports', p); const opts = useApi('options');
   const [f, setF] = useState(p);
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: typeof v === 'object' ? v.target.value : v }));
-  return <Page title="Reports" sub="Search and filter every report by client, vendor, inspector, result and date — view, download or re-email">
+  return <Page title="Reports" sub="Search and filter every report by client, vendor, inspector, result and date — view, download or re-email" actions={['super_admin', 'back_office', 'qc_manager'].includes(me?.user?.role) && <DailySummaryButton />}>
     <Loader q={q}>{(d) => { const s = d.stats; return <>
       <div className="card">
         <form className="filters" onSubmit={(e) => { e.preventDefault(); setSp(Object.fromEntries(Object.entries(f).filter(([, v]) => v))); }}>

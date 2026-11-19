@@ -9,18 +9,18 @@ function menuFor(role, flags, c) {
   switch (role) {
     case 'super_admin': return [['dashboard', 'Dashboard', 'grid'], ['clients', 'Clients', 'building'], ['vendors', 'Vendors', 'factory'], ['mapping', 'Client–Vendor Mapping', 'link'],
       ['_', 'QC Management'], ['requests', 'QC Requests', 'inbox', c.requests], ['import', 'Import Excel', 'upload'], ['jobs', 'QC Jobs', 'clip'], ['schedule', 'QC Schedule', 'cal'], ['review', 'Pending Review', 'eye', c.review],
-      ['_', 'Insight'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['approvals', 'Holds & Concessions', 'pause', c.approvals],
+      ['_', 'Insight'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['manuals', 'QC Manuals', 'book'], ['approvals', 'Holds & Concessions', 'pause', c.approvals],
       ['_', 'Admin'], ['team', 'Team', 'users'], ['settings', 'Settings', 'cog']];
     case 'back_office': return [['dashboard', 'Dashboard', 'grid'], ['clients', 'Clients', 'building'], ['vendors', 'Vendors', 'factory'],
       ['_', 'QC Management'], ['requests', 'QC Requests', 'inbox', c.requests], ['request/new', 'New QC Request', 'plus'], ['import', 'Import Excel', 'upload'], ['jobs', 'QC Jobs', 'clip'], ['schedule', 'QC Schedule', 'cal'],
-      ['_', 'Data'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['team', 'Team', 'users'], ['settings', 'Masters', 'cog']];
+      ['_', 'Data'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['manuals', 'QC Manuals', 'book'], ['team', 'Team', 'users'], ['settings', 'Masters', 'cog']];
     case 'qc_manager': return [['dashboard', 'Dashboard', 'grid'], ['vendors', 'Vendors', 'factory'],
       ['_', 'QC Management'], ['requests', 'QC Requests', 'inbox'], ['jobs', 'QC Jobs & Assign', 'clip'], ['schedule', 'QC Schedule', 'cal'], ['review', 'Pending Review', 'eye', c.review], ['approvals', 'Holds & Concessions', 'pause', c.approvals],
-      ['_', 'Insight'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['team', 'Team', 'users'], ['settings', 'Masters', 'cog']];
+      ['_', 'Insight'], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['manuals', 'QC Manuals', 'book'], ['team', 'Team', 'users'], ['settings', 'Masters', 'cog']];
     case 'client': return [['client', 'Dashboard', 'grid'], ['requests', 'QC Requests', 'inbox'], ...(flags.enable_client_qc_request ? [['request/new', 'Request QC', 'plus']] : []),
-      ['vendors', 'My Vendors', 'factory'], ['schedule', 'QC Schedule', 'cal'], ['approvals', 'Approvals', 'check', c.approvals], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart']];
+      ['vendors', 'My Vendors', 'factory'], ['schedule', 'QC Schedule', 'cal'], ['approvals', 'Approvals', 'check', c.approvals], ['reports', 'Reports', 'file'], ['analytics', 'Analytics', 'chart'], ['manuals', 'QC Manuals & Instructions', 'book']];
     case 'vendor': return [['vendor', 'Dashboard', 'grid'], ...(flags.enable_vendor_qc_request ? [['request/new', 'New QC Request', 'plus'], ['import', 'Bulk Excel Request', 'upload']] : []),
-      ['requests', 'My QC Requests', 'inbox'], ['schedule', 'Schedule', 'cal'], ['approvals', 'Hold Approvals', 'check', c.approvals], ['reports', 'Reports', 'file'], ['profile', 'Profile', 'user']];
+      ['requests', 'My QC Requests', 'inbox'], ['schedule', 'Schedule', 'cal'], ['approvals', 'Hold Approvals', 'check', c.approvals], ['reports', 'Reports', 'file'], ['manuals', 'QC Manuals & Instructions', 'book'], ['profile', 'Profile', 'user']];
     default: return [];
   }
 }

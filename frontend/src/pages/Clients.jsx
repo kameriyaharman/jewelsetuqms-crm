@@ -1,3 +1,4 @@
+import { ManualsPanel } from './Manuals';
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
@@ -29,6 +30,7 @@ export default function Clients() {
           <div className="kv"><div><small>Head office email (auto-CC)</small><b>{sel.ho_email}</b></div><div><small>Report format</small><b>{sel.report_format}</b></div>
             <div><small>Pass / fail rule</small><b>Fail if ≥{Number(sel.fail_threshold)}% Rej/Repair · AQL {sel.aql_default}</b></div><div><small>Vendors</small><b>{sel.vendor_names.join(', ') || '—'}</b></div>
             <div><small>QC this month</small><b>{sel.month.n}</b></div><div><small>Rejection % (all time)</small><b>{sel.all.rate.toFixed(1)}%</b></div></div></div>}
+        {sel && !isNew && <ManualsPanel key={sel.id} client={sel.id} title={`QC Manuals & SOPs — ${sel.code}`} />}
       </div>
       {(sel || isNew) ? <div className="card"><h2 className="mb">{isNew ? 'Add client' : 'Edit client'}</h2>
         <form onSubmit={save}>

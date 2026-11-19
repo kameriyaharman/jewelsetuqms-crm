@@ -1,3 +1,4 @@
+import { DailySummaryButton } from './DailySummary';
 import { Link, useNavigate } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
@@ -8,7 +9,7 @@ export default function Dashboard() {
   const q = useApi('dashboard'); const { me } = useAuth(); const r = me.user.role; const nav = useNavigate();
   const ms = new Date(); const from = `${ms.getFullYear()}-${String(ms.getMonth() + 1).padStart(2, '0')}-01`; const per = from.slice(0, 7);
   const canCreate = ['super_admin', 'back_office'].includes(r);
-  return <Page title="Dashboard" sub={q.data ? 'Overview for ' + q.data.month_label : ''} actions={canCreate && <Link className="btn gold" to="/import"><Icon n="upload" /> Import Excel</Link>}>
+  return <Page title="Dashboard" sub={q.data ? 'Overview for ' + q.data.month_label : ''} actions={<><DailySummaryButton />{canCreate && <Link className="btn gold" to="/import"><Icon n="upload" /> Import Excel</Link>}</>}>
     <Loader q={q}>{(d) => { const m = d.month, p = d.prev; const diff = p.rate ? m.rate - p.rate : 0; return <>
       <div className="g5 mb">
         <Kpi to={`/reports?from=${from}`} label="Total QC reports" value={num(m.n)} sub="This month" icon="clip" />

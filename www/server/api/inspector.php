@@ -28,7 +28,8 @@ api('GET', 'app/job', ['inspector'], function () {
     $job['scope_label'] = scope_label($job);
     $lines = []; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$job['id']]) as $x) { $L = line_stats($job, (int)$x['id']); unset($L['log']); $lines[$x['id']] = $L; }
     $ck = open_checkin((int)user()['id']); $vg = one('SELECT geo_lat, geo_lng, geo_radius FROM vendors WHERE id=?', [$job['vendor_id']]);
-    return ['job' => $job, 'lines' => $lines, 'checkin' => $ck && (int)$ck['vendor_id'] === (int)$job['vendor_id'] ? $ck : null, 'checkin_other' => $ck && (int)$ck['vendor_id'] !== (int)$job['vendor_id'] ? $ck['vendor_name'] : null,
+    $mans = job_manuals($job);
+    return ['job' => $job, 'manuals' => $mans, 'acked' => manual_acked((int)$job['id'], (int)user()['id'], $mans), 'lines' => $lines, 'checkin' => $ck && (int)$ck['vendor_id'] === (int)$job['vendor_id'] ? $ck : null, 'checkin_other' => $ck && (int)$ck['vendor_id'] !== (int)$job['vendor_id'] ? $ck['vendor_name'] : null,
         'geo' => ['pin' => $vg && $vg['geo_lat'] !== null && $vg['geo_lat'] !== '', 'radius' => (int)($vg['geo_radius'] ?? 0 ?: setting('geo_radius', '250')), 'required' => flag('geo_checkin_required'), 'today' => $job['scheduled_date'] === today() || $job['status'] !== 'ASSIGNED'], 'can_lot' => flag('inspector_new_job') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
         'items' => all('SELECT ' . img_item_sql() . ' img, i.id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.instructions, i.parent_id, i.lot_seq FROM qc_items i WHERE i.job_id=? ORDER BY COALESCE(i.parent_id, i.id), COALESCE(i.lot_seq, 1), i.id', [$job['id']]),
         'attachments' => array_map(fn($a) => $a + ['url' => url('file', ['p' => $a['path']])], all('SELECT * FROM attachments WHERE job_id=?', [$job['id']])),
@@ -53,7 +54,9 @@ api('GET', 'app/inspect', ['inspector', 'super_admin'], function () {
     $dm = []; foreach (all('SELECT d.name, d.severity, c.name cat FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name') as $d) $dm[$d['cat']][] = ['n' => $d['name'], 's' => $d['severity']];
     $it['img'] = item_img((int)$it['id']);
     $line = line_stats(job_load((int)$it['job_id']), line_root_id($it));
-    return ['item' => $it, 'line' => $line, 'job' => $job, 'editable' => $editable, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'remarks' => $remarks,
+    $ck = $admin ? null : open_checkin((int)user()['id']);
+    $needCk = !$admin && flag('geo_checkin_required') && in_array($it['status'], ['PENDING', 'IN_PROGRESS'], true) && (!$ck || (int)$ck['vendor_id'] !== (int)$job['vendor_id']);
+    return ['item' => $it, 'line' => $line, 'need_checkin' => $needCk, 'job' => $job, 'editable' => $editable, 'checks' => $checks, 'tests' => $tests, 'meas' => $meas, 'remarks' => $remarks,
         'defects' => all('SELECT category, type, severity, qty, remark FROM item_defects WHERE item_id=?', [$it['id']]),
         'photos' => array_map(fn($p) => ['id' => (int)$p['id'], 'kind' => $p['kind'], 'remark' => $p['remark'], 'url' => url('file', ['p' => $p['path']])], all("SELECT * FROM item_photos WHERE kind<>'ref' AND item_id=? ORDER BY id", [$it['id']])),
         'dm' => $dm, 'plan' => jdec($it['plan_json']), 'steps' => array_values(STEPS), 'threshold' => client_threshold((int)$job['client_id']),
@@ -89,6 +92,8 @@ case 'start':
     if (!$editable) json_out(['error' => 'Read-only'], 409);
     if (!$admin && flag('geo_checkin_required') && !$it['started_at'] && (!($ck = open_checkin((int)$me['id'])) || (int)$ck['vendor_id'] !== (int)$job['vendor_id']))
         json_out(['error' => 'Please CHECK-IN at the vendor factory first (Job screen → 📍 CHECK-IN AT VENDOR).'], 409);
+    if (!$admin && !$it['started_at'] && !manual_acked((int)$job['id'], (int)$me['id'], job_manuals($job)))
+        json_out(['error' => 'Please read the client QC manual / special instructions and tick “I have read” on the job screen first.'], 409);
     $d = ['updated_at' => now()];
     if (!$it['started_at']) $d['started_at'] = now();
     if ($it['status'] === 'PENDING') $d['status'] = 'IN_PROGRESS';

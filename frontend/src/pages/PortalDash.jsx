@@ -1,3 +1,4 @@
+import { TodaySummaryCard } from './DailySummary';
 import { Link } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
@@ -16,6 +17,8 @@ export function ClientDash() {
       <Kpi label="Avg rejection" value={d.stats.rate.toFixed(1) + '%'} sub={num(d.stats.insp) + ' pcs inspected'} tone="gold" icon="chart" />
       <Kpi label="Approvals pending" value={String(d.concessions.length + d.holds).padStart(2, '0')} sub={`${d.concessions.length} concession · ${d.holds} SKU hold`} tone={d.concessions.length + d.holds ? 'bad' : 'ok'} icon="check" />
     </div>
+    <div className="manbanner"><span>📘 <b>QC Manuals &amp; Instructions</b> — share brand manuals, SOPs and special PO notes with your vendors and our inspectors</span><Link className="btn sm pri" to="/manuals">Upload / View QC Manual</Link></div>
+    <TodaySummaryCard />
     <div className="grid g-73">
       <div className="card"><div className="card-h"><h2>QC requests across my vendors</h2><Link to="/requests">All</Link></div>
         {!d.jobs.length ? <Empty>No QC requests yet.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>Job / Req</th><th>Vendor</th><th>PO no.</th><th>Scope / qty</th><th>QC date</th><th>Status</th></tr></thead><tbody>
@@ -46,6 +49,8 @@ export function VendorDash() {
       <Kpi label="In progress" value={String(d.counts.progress).padStart(2, '0')} tone="gold" icon="clock" />
       <Kpi label="Completed" value={d.counts.completed} sub={d.rate.toFixed(1) + '% rejection'} tone="ok" icon="check" />
     </div>
+    <div className="manbanner"><span>📘 <b>QC Manuals &amp; Instructions</b> — client QC manuals for you + upload your factory spec sheet / packaging guide</span><Link className="btn sm pri" to="/manuals">Upload / View QC Manual</Link></div>
+    <TodaySummaryCard />
     {!!d.holds && <div className="note ruby mb"><b>{d.holds} design(s) held for your confirmation</b> — the inspector is waiting. <Link to="/approvals">Respond now →</Link></div>}
     <div className="grid g-73">
       <div className="card"><div className="card-h"><h2>My QC requests</h2><div className="actions">{can && <Link className="btn sm" to="/import">Bulk Excel</Link>}<Link to="/requests">All</Link></div></div>

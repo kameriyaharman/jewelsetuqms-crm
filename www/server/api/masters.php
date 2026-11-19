@@ -176,6 +176,8 @@ api('GET', 'settings', R_INT, function () {
         $aql[] = $row; }
     $S = []; foreach (['company_name', 'company_web', 'company_tagline', 'company_contact', 'report_terms', 'report_portfolio', 'mail_transport', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_secure', 'mail_from', 'mail_from_name', 'admin_email'] as $k) $S[$k] = setting($k, '');
     $S['smtp_pass_set'] = setting('smtp_pass') ? true : false; $S['geo_radius'] = setting('geo_radius', '250');
+    foreach (['daily_summary_on', 'daily_summary_time', 'daily_summary_cc', 'daily_summary_last'] as $k) $S[$k] = setting($k, '');
+    $S['cron_url'] = ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php'), '/') . '/cron/daily?key=' . setting('cron_key', '');
     return ['can_edit' => is_role('super_admin'), 'toggles' => $t, 'settings' => $S, 'categories' => $cats,
         'defects' => all('SELECT d.*, c.name category FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name'),
         'checkpoints' => all('SELECT k.*, c.code client_code FROM checkpoints k LEFT JOIN clients c ON c.id=k.client_id ORDER BY k.client_id, k.sort, k.id'),
@@ -189,6 +191,9 @@ api('POST', 'settings/save', ['super_admin'], function () {
         case 'toggles': foreach (TOGGLES as $k => $_) set_setting($k, in_($k) ? '1' : '0'); if ((int)in_('geo_radius') > 0) set_setting('geo_radius', (string)max(50, min(2000, (int)in_('geo_radius')))); audit('settings', 0, 'TOGGLES'); break;
         case 'email': foreach (['mail_transport', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_secure', 'mail_from', 'mail_from_name', 'admin_email'] as $k) set_setting($k, trim((string)in_($k, '')));
             if ((string)in_('smtp_pass', '') !== '') set_setting('smtp_pass', (string)in_('smtp_pass')); break;
+        case 'daily': set_setting('daily_summary_on', in_('daily_summary_on') ? '1' : '0');
+            $t = (string)in_('daily_summary_time', '19:30'); if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t)) fail('Time like 19:30'); set_setting('daily_summary_time', $t);
+            set_setting('daily_summary_cc', trim((string)in_('daily_summary_cc', ''))); audit('settings', 0, 'DAILY_SUMMARY'); break;
         case 'testmail': require_once ROOT . '/app/mailer.php'; [$st, $er] = send_mail((string)in_('to'), 'Q-TRACK test email', '<p>Email settings work ✓</p>');
             return ['ok' => $st === 'SENT', 'message' => "Test email: $st " . ($er ?? '')];
         case 'template': foreach (['company_name', 'company_web', 'company_tagline', 'company_contact', 'report_terms', 'report_portfolio'] as $k) set_setting($k, (string)in_($k, '')); break;
