@@ -49,7 +49,7 @@ api('GET', 'app/home', ['inspector'], function () {
         $groups = array_values($groups);
         usort($groups, fn($a, $b) => [$b['onsite'] ? 1 : 0, $b['ret'], $a['next_date']] <=> [$a['onsite'] ? 1 : 0, $a['ret'], $b['next_date']]);
     }
-    return ['jobs' => $jobs, 'groups' => $groups, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
+    return ['jobs' => $jobs, 'groups' => $groups, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'checkin' => $ck, 'geo_required' => flag('geo_checkin_required'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('PENDING','IN_PROGRESS','HOLD','RETURNED','COMPLETED') AND j.status NOT IN ('CANCELLED','CLOSED')", [$me['id'], $me['id']]),
         'completed' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')", [$me['id'], $me['id']])];
 });
@@ -377,6 +377,19 @@ api('POST', 'app/newjob', ['inspector'], function () {
 /* ----- geo-fenced factory check-in ----- */
 api('POST', 'app/checkin', ['inspector'], function () {
     $me = user(); $in = inp();
+    // from the home screen: no job chosen → pick the vendor of my open jobs whose factory pin is nearest (within its radius)
+    if (empty($in['job_id']) && empty($in['out']) && isset($in['lat'])) {
+        $cand = all("SELECT j.id, v.id vid, v.geo_lat, v.geo_lng, v.geo_radius FROM qc_jobs j JOIN vendors v ON v.id=j.vendor_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','PARTIAL','RETURNED') ORDER BY j.scheduled_date", [$me['id'], $me['id']]);
+        $best = null; $vids = [];
+        foreach ($cand as $c) { $vids[$c['vid']] = $c['id'];
+            if ($c['geo_lat'] === null || $c['geo_lat'] === '') continue;
+            $dd = geo_dist((float)$in['lat'], (float)$in['lng'], (float)$c['geo_lat'], (float)$c['geo_lng']);
+            if ($dd <= (int)($c['geo_radius'] ?: setting('geo_radius', '250')) + 100 && (!$best || $dd < $best[1])) $best = [$c['id'], $dd]; }
+        if ($best) $in['job_id'] = $best[0];
+        elseif (count($vids) === 1) $in['job_id'] = reset($vids);
+        else fail('You are not at any of your assigned factories — choose the vendor from the list and try again.');
+    }
+    if (!empty($in['out']) && empty($in['job_id']) && ($c0 = open_checkin((int)$me['id']))) $in['job_id'] = $c0['job_id'];
     $job = job_load((int)($in['job_id'] ?? 0)); if (!$job || !my_job($job)) fail('Job not found in your list', 404);
     $v = one('SELECT * FROM vendors WHERE id=?', [$job['vendor_id']]);
     if (!empty($in['out'])) {
