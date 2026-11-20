@@ -1,4 +1,5 @@
 import { DailySummaryButton } from './DailySummary';
+import { Fragment, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
@@ -6,6 +7,8 @@ import { Badge, Bars, Empty, Icon, Kpi, Loader, useApi, Thumb, InspSt } from '..
 import { fdate, num, pct } from '../app/util';
 
 export default function Dashboard() {
+  const [dv, setDv] = useState(() => { try { return localStorage.getItem('qt_dash_view') || 'vendor'; } catch { return 'vendor'; } });
+  const pickDv = (v) => { setDv(v); try { localStorage.setItem('qt_dash_view', v); } catch { /* ignore */ } };
   const q = useApi('dashboard'); const { me } = useAuth(); const r = me.user.role; const nav = useNavigate();
   const ms = new Date(); const from = `${ms.getFullYear()}-${String(ms.getMonth() + 1).padStart(2, '0')}-01`; const per = from.slice(0, 7);
   const canCreate = ['super_admin', 'back_office'].includes(r);
@@ -24,8 +27,9 @@ export default function Dashboard() {
         <Kpi to={`/analytics?period=${per}#vendors`} label="Rejection %" value={m.rate.toFixed(1) + '%'} sub={p.rate ? `${diff <= 0 ? '↓' : '↑'} ${Math.abs(diff).toFixed(1)}% vs ${d.prev_label}` : 'Vendor-wise breakdown'} tone="gold" icon="chart" />
       </div>
       <div className="grid g-73 mb">
-        <div className="card"><div className="card-h"><h2>Today's QC · {fdate(new Date(), 'd M')}</h2><Link to="/schedule">View schedule</Link></div>
-          {!d.today.length ? <Empty>No QC scheduled for today.</Empty> :
+        <div className="card"><div className="card-h"><h2>{dv === 'vendor' ? 'Live QC · vendor-wise' : `Today's QC · ${fdate(new Date(), 'd M')}`}</h2>
+          <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className="seg"><button className={dv === 'vendor' ? 'on' : ''} onClick={() => pickDv('vendor')}>Vendor-wise view</button><button className={dv === 'job' ? 'on' : ''} onClick={() => pickDv('job')}>Job-wise view</button></span><Link to="/schedule">Schedule</Link></span></div>
+          {dv === 'vendor' ? <VendorView groups={d.by_vendor || []} /> : !d.today.length ? <Empty>No QC scheduled for today.</Empty> :
             <div className="tbl-wrap"><table className="t"><thead><tr><th>Job</th><th>Vendor</th><th>Client</th><th>Inspector</th><th>SKUs</th><th>Status</th></tr></thead><tbody>
               {d.today.map((j) => <tr key={j.id} className="rowlink" onClick={() => nav('/request/' + j.id)}><td><div className="skucell"><Thumb src={j.img} size={36} /><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></div></td><td>{j.vendor_name}</td><td>{j.client_code}</td>
                 <td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : <span className="muted">—</span>}</td><td>{j.skus} SKU</td><td><Badge s={j.status} /></td></tr>)}
@@ -55,4 +59,22 @@ export default function Dashboard() {
       </div>
     </>; }}</Loader>
   </Page>;
+}
+
+/** Open job cards grouped per vendor + client: inspectors, open / inspected today / pending designs, live status; click a row to expand its job cards. */
+function VendorView({ groups }) {
+  const [open, setOpen] = useState(null); const nav = useNavigate();
+  if (!groups.length) return <Empty>No open job cards right now.</Empty>;
+  const tone = { ONSITE: 'b-pass', ASSIGNED: 'b-pending', PENDING: 'b-fail' };
+  return <div className="tbl-wrap"><table className="t"><thead><tr><th>Vendor (client)</th><th>Inspector</th><th className="num">Total designs</th><th className="num">Inspected today</th><th className="num">Pending</th><th>Live status</th></tr></thead><tbody>
+    {groups.map((g) => <Fragment key={g.key}>
+      <tr className="rowlink" onClick={() => setOpen(open === g.key ? null : g.key)}>
+        <td><div className="skucell"><Thumb src={g.img} size={36} /><span><b>{open === g.key ? '▾' : '▸'} {g.vendor_name}</b><br /><small className="muted">Client {g.client_code} · {g.location} · {g.jobs.length} job card{g.jobs.length > 1 ? 's' : ''}</small></span></div></td>
+        <td>{g.insp.length ? g.insp.join(', ') : <span className="muted">— unassigned</span>}</td><td className="num strong">{g.designs}</td><td className="num">{g.today}</td><td className="num">{g.open}</td>
+        <td><span className={'badge ' + (tone[g.live.code] || '')}>{g.live.label}</span></td></tr>
+      {open === g.key && <tr className="subrow"><td colSpan={6} style={{ padding: 0 }}><table className="t" style={{ margin: 0, background: '#fafbfc' }}><tbody>
+        {g.jobs.map((j) => <tr key={j.id} className="rowlink" onClick={() => nav('/request/' + j.id)}><td style={{ paddingLeft: 38 }}><div className="skucell"><Thumb src={j.img} size={30} /><span><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><br /><small className="muted mono">{j.sku}</small></span></div></td>
+          <td>PO {j.po_no}</td><td>{j.insp_code ? `${j.insp_code} · ${(j.insp_name || '').split(' ')[0]}` : <span className="muted">—</span>}</td><td>{j.scheduled_date ? fdate(j.scheduled_date, 'd M') : '—'}</td><td className="num">{j.designs} design · {j.open_items} open</td><td><Badge s={j.status} /></td></tr>)}
+      </tbody></table></td></tr>}
+    </Fragment>)}</tbody></table></div>;
 }

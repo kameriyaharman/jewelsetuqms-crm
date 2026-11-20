@@ -1,3 +1,4 @@
+import { initials } from './util';
 import { Link } from 'react-router-dom';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { fileUrl, get } from './api';
@@ -150,4 +151,10 @@ export function InspSt({ st, small }) {
   if (!st) return null;
   const c = { AVAILABLE: ['#e3f4ea', '#1d7a4b', '🟢'], ASSIGNED: ['#fff5d6', '#8a6a10', '🟡'], ONSITE: ['#e1effa', '#1f5f99', '🔵'], LEAVE: ['#eceef1', '#4b5560', '⚫'] }[st.code] || ['#eee', '#333', ''];
   return <span className="ist" title={st.sub} style={{ background: c[0], color: c[1], fontSize: small ? 10.5 : 11.5 }}>{c[2]} {st.label}</span>;
+}
+
+/** Profile photo with initials fallback. */
+export function Avatar({ name, photo, size = 34, className = 'avatar', style }) {
+  const st = { width: size, height: size, fontSize: Math.round(size / 2.9), ...style };
+  return photo ? <img className={className + ' avimg'} src={photo} alt={name} style={{ ...st, objectFit: 'cover', padding: 0 }} /> : <span className={className} style={{ display: 'grid', placeItems: 'center', ...st }}>{initials(name || '?')}</span>;
 }

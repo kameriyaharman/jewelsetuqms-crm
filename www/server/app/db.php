@@ -92,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 8) return;
+    if ($ver >= 9) return;
+    if ($ver === 8) { db_migrate_v9(); return; }
     if ($ver === 7) { db_migrate_v8(); return; }
     if ($ver === 6) { db_migrate_v7(); return; }
     if ($ver === 5) { db_migrate_v6(); return; }
@@ -176,6 +177,12 @@ function db_migrate_v8(): void {
     foreach (['geo_checkin_required' => '1', 'daily_summary_on' => '1', 'daily_summary_time' => '19:30', 'daily_summary_cc' => 'jewelsetu.jqc@gmail.com'] as $k => $v) set_setting($k, $v);
     if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
     set_setting('schema_version', '8');
+    db_migrate_v9();
+}
+/** v9: profile photo for every login. */
+function db_migrate_v9(): void {
+    try { db()->query('SELECT photo FROM users LIMIT 1'); } catch (Throwable $e) { db()->exec('ALTER TABLE users ADD COLUMN photo ' . (is_sqlite() ? 'TEXT' : 'VARCHAR(255)') . ' NULL'); }
+    set_setting('schema_version', '9');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

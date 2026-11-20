@@ -19,9 +19,66 @@ api('GET', 'app/home', ['inspector'], function () {
        WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED','PARTIAL')
        ORDER BY CASE WHEN j.status='RETURNED' THEN 0 WHEN j.status='IN_PROGRESS' THEN 1 WHEN j.status='PARTIAL' THEN 3 ELSE 2 END, j.scheduled_date", [$me['id'], $me['id']]);
     $skus = all("SELECT " . img_item_sql() . " img, i.id, i.sku, i.product, i.ready_qty, i.status, j.job_no FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED')", [$me['id'], $me['id']]);
-    return ['jobs' => $jobs, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
+    // vendor-wise folders: one card per vendor + client + location (1 design = 1 job card makes the job list long)
+    $ck = open_checkin((int)$me['id']); $groups = [];
+    if ($jobs) {
+        $ids = implode(',', array_map(fn($j) => (int)$j['id'], $jobs));
+        $meta = []; foreach (all("SELECT id, vendor_id, client_id FROM qc_jobs WHERE id IN ($ids)") as $m) $meta[$m['id']] = $m;
+        $it = all("SELECT i.job_id, i.status, i.ready_qty, i.order_qty, i.parent_id, i.insp_date FROM qc_items i WHERE i.job_id IN ($ids)");
+        $done = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'];
+        foreach ($jobs as $j) {
+            $m = $meta[$j['id']]; $k = $m['vendor_id'] . '-' . $m['client_id'];
+            $g = &$groups[$k];
+            $g = $g ?? ['key' => $k, 'vendor_id' => (int)$m['vendor_id'], 'client_id' => (int)$m['client_id'], 'vendor_name' => $j['vendor_name'], 'client_code' => $j['client_code'], 'location' => $j['location'],
+                'img' => $j['img'], 'jobs' => 0, 'designs' => 0, 'open' => 0, 'pending_qty' => 0, 'today' => 0, 'ret' => 0, 'hold' => 0, 'next_date' => $j['scheduled_date'], 'job_ids' => []];
+            $g['jobs']++; $g['job_ids'][] = (int)$j['id']; $g['ret'] += (int)$j['ret']; $g['hold'] += (int)$j['hold'];
+            if ($j['scheduled_date'] < $g['next_date']) $g['next_date'] = $j['scheduled_date'];
+            if (!$g['img'] && $j['img']) $g['img'] = $j['img'];
+            unset($g);
+        }
+        $byJob = []; foreach ($jobs as $j) { $m = $meta[$j['id']]; $byJob[$j['id']] = $m['vendor_id'] . '-' . $m['client_id']; }
+        foreach ($it as $i) {
+            $g = &$groups[$byJob[$i['job_id']]];
+            if (!$i['parent_id']) $g['designs']++;
+            if (!in_array($i['status'], $done, true)) { $g['open']++; $g['pending_qty'] += (int)$i['ready_qty']; }
+            elseif ($i['insp_date'] === today()) $g['today']++;
+            unset($g);
+        }
+        foreach ($groups as &$g) { $g['onsite'] = $ck && (int)$ck['vendor_id'] === $g['vendor_id'] ? substr($ck['at'], 11, 5) : null; }
+        unset($g);
+        $groups = array_values($groups);
+        usort($groups, fn($a, $b) => [$b['onsite'] ? 1 : 0, $b['ret'], $a['next_date']] <=> [$a['onsite'] ? 1 : 0, $a['ret'], $b['next_date']]);
+    }
+    return ['jobs' => $jobs, 'groups' => $groups, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('PENDING','IN_PROGRESS','HOLD','RETURNED','COMPLETED') AND j.status NOT IN ('CANCELLED','CLOSED')", [$me['id'], $me['id']]),
         'completed' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')", [$me['id'], $me['id']])];
+});
+/** Level 2 of the vendor folder: every design of my open jobs at this vendor + client (+ location). */
+api('GET', 'app/vendor', ['inspector'], function () {
+    $me = user(); $vid = (int)in_('v'); $cid = (int)in_('c');
+    $jobs = all("SELECT j.*, c.code client_code, v.name vendor_name, v.address vendor_address FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id
+        WHERE (j.inspector_id=? OR j.inspector2_id=?) AND j.vendor_id=? AND j.client_id=? AND j.status IN ('ASSIGNED','IN_PROGRESS','SUBMITTED','UNDER_REVIEW','RETURNED','PARTIAL') ORDER BY j.scheduled_date, j.id", [$me['id'], $me['id'], $vid, $cid]);
+    if (!$jobs) fail('No open jobs for this vendor', 404);
+    $byId = []; foreach ($jobs as $j) $byId[$j['id']] = $j;
+    $ids = implode(',', array_keys($byId));
+    $items = all('SELECT ' . img_item_sql() . " img, i.id, i.job_id, i.sku, i.product, i.ready_qty, i.insp_qty, i.order_qty, i.status, i.parent_id, i.lot_seq, i.instructions FROM qc_items i WHERE i.job_id IN ($ids) ORDER BY i.job_id, COALESCE(i.parent_id, i.id), COALESCE(i.lot_seq, 1), i.id");
+    $lots = []; foreach ($items as $i) $lots[$i['parent_id'] ?: $i['id']][] = $i;
+    $rows = [];
+    foreach ($lots as $root => $ls) {
+        $r = $ls[0]; $last = end($ls); $j = $byId[$r['job_id']]; $L = line_stats($j, (int)$root);
+        $rows[] = ['id' => (int)$last['id'], 'root' => (int)$root, 'job_id' => (int)$j['id'], 'job_no' => $j['job_no'], 'po_no' => $j['po_no'], 'job_status' => $j['status'], 'sku' => $r['sku'], 'product' => $r['product'], 'img' => $r['img'],
+            'status' => $last['status'], 'lot' => (int)($last['lot_seq'] ?: 1), 'order' => $L['order'] ?: (int)$r['order_qty'], 'ready' => (int)$last['ready_qty'], 'accepted' => $L['accepted'], 'pending' => $L['order'] ? $L['pending'] : (in_array($last['status'], ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'], true) ? 0 : (int)$last['ready_qty']),
+            'lots' => $L['lots'], 'can_add_lot' => $L['can_add_lot'], 'instructions' => $r['instructions']];
+    }
+    $f = $jobs[0]; $ck = open_checkin((int)$me['id']); $vg = one('SELECT geo_lat, geo_lng, geo_radius FROM vendors WHERE id=?', [$vid]);
+    $mans = []; $acked = true;
+    foreach ($jobs as $j) { $jm = job_manuals($j); foreach ($jm as $m) $mans[$m['id']] = $m; if (!manual_acked((int)$j['id'], (int)$me['id'], $jm)) $acked = false; }
+    $open = array_values(array_filter($jobs, fn($j) => in_array($j['status'], ['ASSIGNED', 'IN_PROGRESS', 'PARTIAL', 'RETURNED'], true)));
+    return ['vendor' => ['id' => $vid, 'name' => $f['vendor_name'], 'client_code' => $f['client_code'], 'location' => $f['location'], 'address' => $f['vendor_address']],
+        'job' => $open[0] ?? $f, 'jobs' => array_map(fn($j) => ['id' => (int)$j['id'], 'job_no' => $j['job_no'], 'po_no' => $j['po_no'], 'status' => $j['status']], $jobs), 'rows' => $rows,
+        'manuals' => array_values($mans), 'acked' => $acked, 'checkin' => $ck && (int)$ck['vendor_id'] === $vid ? $ck : null, 'checkin_other' => $ck && (int)$ck['vendor_id'] !== $vid ? $ck['vendor_name'] : null,
+        'geo' => ['pin' => $vg && $vg['geo_lat'] !== null && $vg['geo_lat'] !== '', 'radius' => (int)($vg['geo_radius'] ?? 0 ?: setting('geo_radius', '250')), 'required' => flag('geo_checkin_required')],
+        'can_lot' => flag('inspector_new_job')];
 });
 api('GET', 'app/job', ['inspector'], function () {
     $job = job_load((int)in_('id')); if (!$job || !my_job($job)) fail('Job not found', 404);

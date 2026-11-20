@@ -15,8 +15,41 @@ api('GET', 'dashboard', R_INT, function () {
         'open_jobs' => (int)val("SELECT COUNT(*) FROM qc_jobs WHERE status='PARTIAL'"),
         'team_live' => array_map(fn($u) => $u + ['st' => insp_status((int)$u['id'], today())], all("SELECT id, emp_code, name FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code")),
         'open_bal' => array_sum(array_map(function ($j) { $p = 0; foreach (all('SELECT id FROM qc_items WHERE job_id=? AND parent_id IS NULL', [$j['id']]) as $x) $p += line_stats($j, (int)$x['id'])['pending']; return $p; }, all("SELECT * FROM qc_jobs WHERE status='PARTIAL'"))),
-        'trend' => month_trend(approved_items()), 'today' => $today, 'upcoming' => $up];
+        'trend' => month_trend(approved_items()), 'today' => $today, 'upcoming' => $up, 'by_vendor' => dash_vendor_groups()];
 });
+/** Dashboard "Vendor-wise view": open job cards grouped per vendor + client with inspectors, open / inspected-today / pending designs and live status. */
+function dash_vendor_groups(): array {
+    $jobs = all("SELECT " . img_job_sql() . " img, j.id, j.job_no, j.req_no, j.po_no, j.status, j.scheduled_date, j.vendor_id, j.client_id, j.inspector_id, c.code client_code, v.name vendor_name, v.location vendor_loc, u.name insp_name, u.emp_code insp_code,
+        (SELECT MIN(sku) FROM qc_items WHERE job_id=j.id) sku, (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id AND parent_id IS NULL) designs,
+        (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id AND status NOT IN ('SUBMITTED','UNDER_REVIEW','APPROVED')) open_items,
+        (SELECT COUNT(*) FROM qc_items WHERE job_id=j.id AND insp_date=? AND status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')) today_done
+        FROM qc_jobs j JOIN clients c ON c.id=j.client_id JOIN vendors v ON v.id=j.vendor_id LEFT JOIN users u ON u.id=j.inspector_id
+        WHERE j.status IN ('SCHEDULED','ASSIGNED','IN_PROGRESS','PARTIAL','RETURNED','SUBMITTED','UNDER_REVIEW') OR (j.scheduled_date=? AND j.status<>'CANCELLED')
+        ORDER BY j.scheduled_date, j.id", [today(), today()]);
+    $g = []; $live = [];
+    foreach ($jobs as $j) {
+        $k = $j['vendor_id'] . '-' . $j['client_id'];
+        $g[$k] = $g[$k] ?? ['key' => $k, 'vendor_id' => (int)$j['vendor_id'], 'vendor_name' => $j['vendor_name'], 'client_code' => $j['client_code'], 'location' => explode(',', (string)$j['vendor_loc'])[0], 'img' => $j['img'],
+            'jobs' => [], 'designs' => 0, 'open' => 0, 'today' => 0, 'insp' => [], 'live' => null];
+        $x = &$g[$k];
+        $x['jobs'][] = $j; $x['designs'] += (int)$j['designs']; $x['open'] += (int)$j['open_items']; $x['today'] += (int)$j['today_done'];
+        if (!$x['img'] && $j['img']) $x['img'] = $j['img'];
+        if ($j['inspector_id']) $x['insp'][$j['inspector_id']] = $j['insp_code'] . ' ' . explode(' ', (string)$j['insp_name'])[0];
+        unset($x);
+    }
+    foreach ($g as &$x) {
+        foreach (array_keys($x['insp']) as $uid) {
+            $live[$uid] = $live[$uid] ?? open_checkin((int)$uid);
+            if ($live[$uid] && (int)$live[$uid]['vendor_id'] === $x['vendor_id']) $x['live'] = ['code' => 'ONSITE', 'label' => 'ON-SITE · ' . date('h:i A', strtotime($live[$uid]['at']))];
+        }
+        if (!$x['live']) $x['live'] = $x['insp'] ? ['code' => 'ASSIGNED', 'label' => 'NOT CHECKED-IN'] : ['code' => 'PENDING', 'label' => 'UNASSIGNED'];
+        $x['insp'] = array_values($x['insp']);
+    }
+    unset($x);
+    $g = array_values($g);
+    usort($g, fn($a, $b) => [$b['live']['code'] === 'ONSITE', $b['open']] <=> [$a['live']['code'] === 'ONSITE', $a['open']]);
+    return $g;
+}
 
 /* ----- clients ----- */
 api('GET', 'clients', ['super_admin', 'back_office'], function () {
@@ -125,7 +158,8 @@ api('POST', 'mapping/save', ['super_admin'], function () {
 api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
     $f = (string)in_('f', 'internal');
     $where = match ($f) { 'inspector' => "role='inspector'", 'qc_manager' => "role='qc_manager'", 'back_office' => "role='back_office'", 'portal' => "role IN ('client','vendor')", default => "role IN ('super_admin','back_office','qc_manager','inspector')" };
-    $rows = all("SELECT u.id, u.name, u.email, u.emp_code, u.role, u.location, u.status, u.last_login, c.code ccode, v.name vname FROM users u LEFT JOIN clients c ON c.id=u.client_id LEFT JOIN vendors v ON v.id=u.vendor_id WHERE $where ORDER BY u.role, u.emp_code, u.name");
+    $rows = all("SELECT u.id, u.name, u.email, u.emp_code, u.role, u.location, u.status, u.last_login, u.photo, c.code ccode, v.name vname FROM users u LEFT JOIN clients c ON c.id=u.client_id LEFT JOIN vendors v ON v.id=u.vendor_id WHERE $where ORDER BY u.role, u.emp_code, u.name");
+    foreach ($rows as &$r) { $r['photo'] = $r['photo'] ? url('file', ['p' => $r['photo']]) : null; } unset($r);
     $perf = []; foreach (all("SELECT id, name, emp_code FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code") as $u) $perf[] = $u + inspector_kpis((int)$u['id'], date('Y-m-01'));
     $sel = null;
     if ($id = (int)in_('id')) { $sel = one('SELECT id, name, email, emp_code, role, client_id, vendor_id, phone, designation, location, area, joined_on, status FROM users WHERE id=?', [$id]);

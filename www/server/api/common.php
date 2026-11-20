@@ -11,7 +11,7 @@ function me_payload(): array {
     $flags = []; foreach (['enable_vendor_qc_request', 'enable_client_qc_request', 'require_defect_photo', 'gps_on_inspection_start', 'allow_job_split', 'block_qty_mismatch', 'qc_manager_role', 'inspector_new_job', 'inspector_edit_after_submit', 'lock_inspected_quantity', 'import_one_job_per_design'] as $k) $flags[$k] = flag($k);
     return ['auth' => true, 'csrf' => csrf_token(), 'demo' => $GLOBALS['CFG']['seed_demo'], 'flags' => $flags, 'counts' => nav_counts(),
         'user' => ['id' => (int)$u['id'], 'name' => $u['name'], 'role' => $u['role'], 'role_label' => ROLES[$u['role']], 'emp_code' => $u['emp_code'], 'email' => $u['email'],
-            'client_id' => $u['client_id'] ? (int)$u['client_id'] : null, 'vendor_id' => $u['vendor_id'] ? (int)$u['vendor_id'] : null, 'org' => $org, 'location' => $u['location'], 'phone' => $u['phone']]];
+            'client_id' => $u['client_id'] ? (int)$u['client_id'] : null, 'vendor_id' => $u['vendor_id'] ? (int)$u['vendor_id'] : null, 'org' => $org, 'location' => $u['location'], 'phone' => $u['phone'], 'photo' => !empty($u['photo']) ? url('file', ['p' => $u['photo']]) : null]];
 }
 function nav_counts(): array {
     $u = user(); $r = $u['role']; $c = ['unread' => (int)val('SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0', [$u['id']])];
@@ -43,6 +43,17 @@ api('GET', 'notifications', R_ALL, function () {
     return ['items' => $list, 'returned' => $ret];
 });
 
+/** Profile photo: any logged-in user sets / removes their own (Super Admin also for a team member). */
+api('POST', 'profile/photo', R_ALL, function () {
+    $uid = (int)user()['id']; if (is_role('super_admin') && (int)in_('user_id')) $uid = (int)in_('user_id');
+    $old = val('SELECT photo FROM users WHERE id=?', [$uid]);
+    if (in_('remove')) { q('UPDATE users SET photo=NULL WHERE id=?', [$uid]); return ['ok' => true, 'message' => 'Photo removed.', 'photo' => null]; }
+    $f = $_FILES['file'] ?? null; if (!$f || $f['error'] !== UPLOAD_ERR_OK) fail('Choose a photo (JPG / PNG).');
+    if ($f['size'] > 5 * 1024 * 1024) fail('Photo must be under 5 MB.');
+    $s = save_upload($f, 'avatars', ['jpg', 'jpeg', 'png', 'webp']); if (!$s) fail('Only JPG / PNG / WEBP photos are allowed.');
+    q('UPDATE users SET photo=? WHERE id=?', [$s['path'], $uid]); audit('user', $uid, 'EDIT', 'photo', $old, $s['path']);
+    return ['ok' => true, 'message' => 'Profile photo updated.', 'photo' => url('file', ['p' => $s['path']])];
+});
 api('GET', 'profile', R_ALL, function () {
     $u = user(); $o = ['user' => me_payload()['user']];
     if ($u['vendor_id']) { $o['vendor'] = one('SELECT * FROM vendors WHERE id=?', [$u['vendor_id']]);
@@ -89,7 +100,8 @@ api('GET', 'file', R_ALL, function () {
     $mine = str_starts_with($p, 'imports/img/') && in_array($p, array_column($_SESSION['import']['rows'] ?? [], 'img'), true);
     $man = null;
     if (str_starts_with($p, 'manuals/')) { [$w, $mp] = manual_scope_sql(); $man = one("SELECT m.file_name FROM manuals m WHERE m.path=? AND $w", array_merge([$p], $mp)); if (!$man) fail('Forbidden', 403); }
-    if (!$job && !is_internal() && !$mine && !$man) fail('Forbidden', 403);
+    $avatar = str_starts_with($p, 'avatars/');   // profile photos: visible to any logged-in user
+    if (!$job && !is_internal() && !$mine && !$man && !$avatar) fail('Forbidden', 403);
     $mime = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp',
         'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'csv' => 'text/csv', 'xls' => 'application/vnd.ms-excel',
         'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'doc' => 'application/msword'][strtolower(pathinfo($full, PATHINFO_EXTENSION))] ?? 'application/octet-stream';

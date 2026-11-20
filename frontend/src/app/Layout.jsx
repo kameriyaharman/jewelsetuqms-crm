@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth';
-import { Icon } from './ui';
-import { initials } from './util';
+import { Avatar, Icon } from './ui';
 import { flushQueue, queue } from './api';
 
 function menuFor(role, flags, c) {
@@ -37,7 +36,7 @@ export function Shell() {
       <div className="portal-tag">{portal}</div>
       <nav>{menuFor(u.role, me.flags, me.counts || {}).map((m, i) => m[0] === '_' ? <div key={i} className="nav-h">{m[1]}</div> :
         <NavLink key={m[0]} to={'/' + m[0]} className={({ isActive }) => (isActive ? 'on' : '')}><Icon n={m[2]} /><span>{m[1]}</span>{m[3] ? <em>{m[3]}</em> : null}</NavLink>)}</nav>
-      <div className="me"><div className="av">{initials(u.name)}</div><div><b>{u.name}</b><small>{u.role_label} · {u.org}</small></div>
+      <div className="me"><Link to="/profile" title="My profile & photo" style={{ display: 'contents', color: 'inherit' }}><Avatar name={u.name} photo={u.photo} className="av" /><div><b>{u.name}</b><small>{u.role_label} · {u.org}</small></div></Link>
         <a href="#" title="Logout" onClick={async (e) => { e.preventDefault(); await logout(); nav('/login'); }}><Icon n="logout" /></a></div>
     </aside>
     <main className="main"><Outlet context={{ setOpen }} /></main>

@@ -6,11 +6,13 @@ import { useAuth } from '../app/auth';
 import { flushQueue, pdfUrl, queue, post } from '../app/api';
 import { Badge, Empty, Icon, Loader, useApi, Thumb, Modal, useToast } from '../app/ui';
 import { fdate, fdt, initials, num } from '../app/util';
-import { PasswordForm } from './Account';
+import { PasswordForm, ProfileHead } from './Account';
 
 export function AppHome() {
   const { me } = useAuth(); const q = useApi('app/home'); const { online, qn } = useOutletContext(); const nav = useNavigate();
   const [search, setSearch] = useState(''); const [syncMsg, setSyncMsg] = useState('synced');
+  const [view, setView] = useState(() => { try { return localStorage.getItem('qt_home_view') || 'vendor'; } catch { return 'vendor'; } });
+  const pickView = (v) => { setView(v); try { localStorage.setItem('qt_home_view', v); } catch { /* ignore */ } };
   const h = new Date().getHours(); const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   return <MPage title="Q-TRACK" right={<Link to="/app/alerts" style={{ color: '#fff' }}><Icon n="bell" /></Link>}>
     <div className="offbar">You are offline — everything you enter is saved on this phone and will sync automatically.</div>
@@ -24,9 +26,11 @@ export function AppHome() {
         <div className="mcard"><b>Search design / SKU</b>
           <div className="mt" style={{ display: 'flex', gap: 8 }}><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search SKU / design no." /></div>
           <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>
-        <h3 style={{ fontSize: 14, margin: '6px 0 10px' }}>My assigned QC</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '6px 0 10px' }}><h3 style={{ fontSize: 14, margin: 0 }}>My assigned QC</h3>
+          <div className="seg"><button className={view === 'vendor' ? 'on' : ''} onClick={() => pickView('vendor')}>🏭 Vendor-wise</button><button className={view === 'job' ? 'on' : ''} onClick={() => pickView('job')}>Job-wise</button></div></div>
         {!d.jobs.length && <div className="mcard"><Empty>No QC jobs assigned right now.</Empty></div>}
-        {d.jobs.map((j) => { const ret = +j.ret, view = !ret && +j.done === +j.skus; return <div key={j.id} className="mcard">
+        {view === 'vendor' && (d.groups || []).map((g) => <VendorFolder key={g.key} g={g} />)}
+        {view === 'job' && d.jobs.map((j) => { const ret = +j.ret, view = !ret && +j.done === +j.skus; return <div key={j.id} className="mcard">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}><span className="mitem"><Thumb src={j.img} size={48} /><b>{j.client_code} – {j.vendor_name.toUpperCase()}</b></span><Badge s={ret ? 'RETURNED' : j.status} /></div>
           <p className="muted" style={{ margin: '6px 0 10px', fontSize: 12.5 }}>{fdate(j.scheduled_date)} · {j.time_slot} · {j.skus} SKU · {j.location}<br />PO {j.po_no} · {j.job_no} · {j.done}/{j.skus} submitted
             {+j.hold ? <b style={{ color: '#b4561b' }}> · {j.hold} on hold</b> : null}{ret ? <b style={{ color: 'var(--ruby)' }}> · {ret} returned</b> : null}</p>
@@ -34,6 +38,74 @@ export function AppHome() {
         </div>; })}
       </>; }}</Loader>
   </MPage>;
+}
+
+/** Level 1: one folder card per vendor + client + location. */
+function VendorFolder({ g }) {
+  const nav = useNavigate(); const url = `/app/vendor/${g.vendor_id}/${g.client_id}`;
+  return <div className={'mcard vfold' + (g.onsite ? ' on' : '')} onClick={() => nav(url)}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <span className="mitem"><Thumb src={g.img} size={46} /><span><b>🏭 {g.vendor_name.toUpperCase()}</b><small>Client: {g.client_code} · 📍 {g.location || '—'}</small></span></span>
+      <span className={'vst ' + (g.onsite ? 'on' : '')}>{g.onsite ? `ON-SITE ✓ ${g.onsite}` : 'NOT CHECKED-IN'}</span></div>
+    <div className="vgrid"><div><small>Total designs</small><b>{g.designs}</b></div><div><small>Pending qty</small><b>{num(g.pending_qty)}</b></div><div><small>Done today</small><b>{String(g.today).padStart(2, '0')}</b></div><div><small>Remaining</small><b>{g.open}</b></div></div>
+    {(g.ret > 0 || g.hold > 0) && <p style={{ margin: '0 0 8px', fontSize: 12 }}>{g.ret > 0 && <b style={{ color: 'var(--ruby)' }}>{g.ret} returned to fix · </b>}{g.hold > 0 && <b style={{ color: '#b4561b' }}>{g.hold} on hold</b>}</p>}
+    <button className={'bigbtn ' + (g.ret ? 'ruby' : g.onsite ? '' : 'alt')} onClick={(e) => { e.stopPropagation(); nav(url); }}>OPEN VENDOR JOBS ({g.open}) →</button>
+  </div>;
+}
+
+const VF = [['all', 'All open'], ['pending', 'Pending'], ['partial', 'Partial / repair'], ['hold', 'Hold'], ['done', 'Submitted']];
+const DONE = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'];
+const vfOf = (r) => (r.status === 'HOLD' ? 'hold' : r.status === 'RETURNED' || r.can_add_lot || (r.lots > 1 && !DONE.includes(r.status)) ? 'partial' : DONE.includes(r.status) ? 'done' : 'pending');
+
+/** Level 2: every design of my open jobs at one vendor — search by SKU / PO, quick filters, start / continue / add lot. */
+export function AppVendor() {
+  const { v, c } = useParams();
+  const q = useApi('app/vendor', { v, c }); const nav = useNavigate(); const toast = useToast();
+  const [s, setS] = useState(''); const [f, setF] = useState('all'); const [busy, setBusy] = useState(false);
+  const [lot, setLot] = useState(null); const [mv, setMv] = useState(null); const [manOpen, setManOpen] = useState(false); const [ackTick, setAckTick] = useState(false);
+  return <Loader q={q}>{(d) => {
+    const lock = !!(d.geo?.required && !d.checkin);
+    const needAck = !d.acked && d.manuals.some((m) => m.priority === 'HIGH');
+    const cnt = { all: 0, pending: 0, partial: 0, hold: 0, done: 0 };
+    d.rows.forEach((r) => { const k = vfOf(r); cnt[k]++; if (k !== 'done') cnt.all++; });
+    const Q = s.trim().toUpperCase();
+    const rows = d.rows.filter((r) => (f === 'all' ? vfOf(r) !== 'done' : vfOf(r) === f) && (!Q || r.sku.toUpperCase().includes(Q) || String(r.po_no).toUpperCase().includes(Q) || String(r.job_no).toUpperCase().includes(Q)));
+    const open = (r) => { if (lock && !DONE.includes(r.status)) { toast('Check-in at the factory first', 'warn'); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      if (needAck && r.status === 'PENDING') { setManOpen(true); return; } nav('/app/inspect/' + r.id); };
+    const addLot = async () => { setBusy(true); try { const x = await post('app/newjob', { lot_of: lot.root, ready_qty: lot.ready }); toast(x.message); nav('/app/inspect/' + x.first); } catch (e) { toast(e.message, 'err'); } setBusy(false); };
+    const ack = async () => { setBusy(true); try { const x = await post('manuals/ack', { job_ids: d.jobs.map((j) => j.id) }); toast(x.message); setManOpen(false); q.reload(); } catch (e) { toast(e.message, 'err'); } setBusy(false); };
+    const btn = (r) => r.status === 'PENDING' ? 'START QC' : r.status === 'RETURNED' ? 'FIX' : DONE.includes(r.status) ? 'VIEW' : r.status === 'HOLD' ? 'VIEW' : 'CONTINUE';
+    return <MPage title={d.vendor.name} back="/app">
+      <div className="mcard" style={{ paddingBottom: 10 }}><b>🏭 {d.vendor.name} <span className="muted" style={{ fontWeight: 500 }}>· Client {d.vendor.client_code}</span></b>
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>📍 {d.vendor.location}{d.vendor.address ? ' — ' + d.vendor.address : ''} · {d.jobs.length} job card{d.jobs.length > 1 ? 's' : ''} · {d.rows.length} design{d.rows.length > 1 ? 's' : ''}</p></div>
+      {d.manuals.length > 0 && <button className="manalert" onClick={() => setManOpen(true)}><span>⚠️ <b>Client QC Manual &amp; Special Instructions</b> ({d.manuals.length} file{d.manuals.length > 1 ? 's' : ''}){needAck ? ' — read & confirm before START QC' : ''}</span><b>TAP TO VIEW</b></button>}
+      <CheckIn d={{ ...d, job: d.job }} reload={q.reload} />
+      {lock && <div className="note" style={{ marginBottom: 10, fontSize: 12.5 }}>🔒 <b>Step 1: Check-in at the factory.</b> Designs open for inspection after check-in.</div>}
+      <div className="vsearch"><input type="search" placeholder="Search SKU / PO no. / job no." value={s} onChange={(e) => setS(e.target.value)} /></div>
+      <div className="pills">{VF.map(([k, l]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{l} ({cnt[k]})</button>)}</div>
+      <div className="mcard" style={{ padding: '4px 12px' }}>{!rows.length ? <Empty>{Q ? 'No design matches this search.' : 'Nothing here.'}</Empty> : rows.map((r) => <div key={r.root} className="vrow">
+        <span onClick={() => open(r)} style={{ cursor: 'pointer' }}><Thumb src={r.img} size={54} alt={r.sku} /></span>
+        <div style={{ flex: 1, minWidth: 0 }} onClick={() => open(r)}><b className="mono" style={{ fontSize: 13.5 }}>{r.sku}</b>{r.lots > 1 && <small style={{ display: 'inline' }}> · Lot {r.lot}</small>}
+          <small>PO {r.po_no} · {r.job_no}</small>
+          <small><b style={{ color: r.pending ? '#b4561b' : 'var(--ok)' }}>{num(r.pending)}</b> pending / {num(r.order)} order{r.accepted ? ` · OK ${num(r.accepted)}` : ''}</small>
+          {r.instructions && <small className="vins">📝 {r.instructions}</small>}</div>
+        <div className="vact"><Badge s={r.status} />
+          {r.can_add_lot && d.can_lot ? <button className="btn sm" onClick={() => setLot({ root: r.root, sku: r.sku, pending: r.pending, ready: r.pending })}>+ ADD LOT</button>
+            : <button className={'btn sm ' + (r.status === 'PENDING' ? 'pri' : '')} style={lock && !DONE.includes(r.status) ? { opacity: 0.55 } : {}} onClick={() => open(r)}>{btn(r)}</button>}</div>
+      </div>)}</div>
+      <Modal open={manOpen} title={'Client QC manual · ' + d.vendor.client_code} onClose={() => setManOpen(false)}>
+        {d.manuals.map((m) => <button key={m.id} className="manitem" onClick={() => setMv(m)}><span>{m.path ? (m.ext === 'pdf' ? '📕' : ['jpg', 'jpeg', 'png', 'webp'].includes(m.ext) ? '🖼️' : m.ext.startsWith('xl') ? '📗' : '📘') : '📝'}</span>
+          <span style={{ flex: 1, textAlign: 'left' }}><b>{m.title}</b> <small>v{m.version}{m.badge ? ' · ' + m.badge : ''}{m.priority === 'HIGH' ? ' · MANDATORY' : ''}</small><small style={{ display: 'block' }}>{m.scope_label}</small>{m.note && <small className="mannote" style={{ display: 'block' }}>{m.note}</small>}</span><b>›</b></button>)}
+        {needAck && <><label className="chk mt" style={{ fontSize: 14 }}><input type="checkbox" checked={ackTick} onChange={(e) => setAckTick(e.target.checked)} style={{ width: 20, height: 20 }} /> ✓ I have read the Client QC Manual / Special Instructions</label>
+          <button className="bigbtn gold" disabled={!ackTick || busy} onClick={ack}>CONFIRM &amp; CONTINUE</button></>}
+      </Modal>
+      <ManualViewer m={mv} onClose={() => setMv(null)} />
+      <Modal open={!!lot} title={lot ? 'Next QC lot · ' + lot.sku : ''} onClose={() => setLot(null)}>
+        {lot && <><p className="muted" style={{ marginTop: 0, fontSize: 12.5 }}>Balance <b>{num(lot.pending)}</b> pcs. Enter how many pieces the vendor presented today (fresh + repaired).</p>
+          <div className="f"><label>Presented / ready qty</label><input type="number" inputMode="numeric" min="1" value={lot.ready} onChange={(e) => setLot({ ...lot, ready: e.target.value })} /></div>
+          <button className="bigbtn gold" disabled={busy || !(+lot.ready > 0)} onClick={addLot}>START LOT</button></>}
+      </Modal>
+    </MPage>; }}</Loader>;
 }
 
 export function AppJob() {
@@ -110,8 +182,7 @@ export function AppAlerts() {
 export function AppProfile() {
   const { me, logout } = useAuth(); const q = useApi('profile'); const nav = useNavigate(); const [qn, setQn] = useState(queue.all().length);
   return <MPage title="Profile"><Loader q={q}>{(d) => <>
-    <div className="mcard" style={{ textAlign: 'center' }}><div className="avatar" style={{ width: 64, height: 64, fontSize: 22, margin: '0 auto 8px', display: 'grid' }}>{initials(me.user.name)}</div>
-      <b style={{ fontSize: 17 }}>{me.user.name}</b><p className="muted" style={{ margin: '2px 0 0' }}>{me.user.emp_code} · Inspector · {me.user.location}</p>
+    <div className="mcard" style={{ textAlign: 'center' }}><ProfileHead />
       <div className="mstats"><div><b>{d.kpi.assigned}</b><small>Assigned</small></div><div><b>{d.kpi.done}</b><small>Completed</small></div><div><b>{Math.round(d.kpi.first)}%</b><small>Approval</small></div></div></div>
     <div className="mcard"><b>Offline data &amp; sync</b><p className="muted" style={{ fontSize: 12.5 }}>Pending uploads: <b>{qn}</b></p>
       <button className="bigbtn alt" onClick={async () => { await flushQueue(); setQn(queue.all().length); }}>SYNC NOW</button>

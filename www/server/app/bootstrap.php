@@ -509,3 +509,10 @@ function insp_status(int $uid, string $date, int $excludeJob = 0): array {
     if ($jobs) return ['code' => 'ASSIGNED', 'label' => $date === today() ? 'ASSIGNED · EN-ROUTE' : 'ASSIGNED', 'sub' => "$jobs job(s) that day", 'jobs' => $jobs];
     return ['code' => 'AVAILABLE', 'label' => 'AVAILABLE', 'sub' => 'free', 'jobs' => 0];
 }
+/** Stone and setting arrive in two template columns; one stored field keeps reports and edits unchanged ("CZ / Prong"). */
+function stone_join(string $stone, string $setting): string {
+    $clean = fn($x) => in_array(trim($x), ['', '-', '—'], true) ? '' : trim($x);
+    $a = $clean($stone); $b = $clean($setting);
+    if ($a === '' && $b === '') return trim($stone) !== '' || trim($setting) !== '' ? '—' : '';
+    return $a !== '' && $b !== '' ? "$a / $b" : ($a ?: $b);
+}

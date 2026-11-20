@@ -383,7 +383,8 @@ api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function 
     $find = function (array $names) use ($hdr) { foreach ($names as $n) { $k = array_search($n, $hdr, true); if ($k !== false) return $k; } return null; };
     $map = [];
     foreach (['vendor' => ['vendor', 'vendorname', 'factory'], 'po' => ['pono', 'po', 'ponumber'], 'sku' => ['sku', 'designno', 'skudesignno', 'design', 'itemsku', 'styleno'],
-        'style' => ['clientstyleref', 'styleref', 'clientstyle', 'refno'], 'stone' => ['stonesetting', 'stone', 'settingtype'],
+        'style' => ['clientstyleref', 'styleref', 'clientstyle', 'refno'], 'stone' => ['stonesetting', 'stone', 'stones'], 'setting' => ['setting', 'settingtype', 'settingstyle'],
+        'instr' => ['otherinstructionsspecialremarks', 'otherinstructions', 'specialremarks', 'specialinstructions', 'instructions', 'remarks', 'remark'],
         'product' => ['product', 'category', 'item'], 'order' => ['orderqty', 'orderquantity', 'order'], 'ready' => ['readyqty', 'readyquantity', 'ready', 'qty', 'quantity'],
         'scope' => ['qcscope', 'scope'], 'metal' => ['metal'], 'plating' => ['plating'], 'weight' => ['weight', 'targetweight', 'gross'], 'length' => ['length'],
         'lock' => ['lock', 'locktype'], 'stamping' => ['stamping'], 'date' => ['requesteddate', 'qcdate', 'date'], 'spec' => ['specfile', 'spec', 'attachment'],
@@ -423,7 +424,7 @@ api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function 
             $e = $check($x, $formVendor, $po, $sc, $x['qty'], $x['qty'], $w);
             $rows[] = array_merge($x, ['vendor_id' => $formVendor['id'] ?? null, 'vendor' => $formVendor['name'] ?? '—', 'po' => $po, 'order' => $x['qty'], 'ready' => $x['qty'], 'scope' => $sc,
                 'date' => null, 'spec' => '', 'errors' => $e, 'warnings' => $w, 'img' => $img,
-                'raw' => [$formVendor['name'] ?? '', $po, $x['sku'], $img ? 'yes' : '', $x['style'], $x['stone'], $x['product'], $x['qty'], $x['qty'], $sc['label'], $x['metal'], $x['plating'], $x['weight'], $x['length'], $x['lock'], '', '', '']]);
+                'raw' => [$formVendor['name'] ?? '', $po, $x['sku'], $img ? 'yes' : '', $x['style'], $x['stone'], '', $x['product'], $x['qty'], $x['qty'], $sc['label'], $x['metal'], $x['plating'], $x['weight'], $x['length'], $x['lock'], '', '', '', $x['instructions'] ?? '']]);
         }
         if (!$rows) fail('No designs found in this sheet. Each design needs its design no. and metal on the first row.');
     } else {
@@ -449,9 +450,9 @@ api('POST', 'import/upload', ['super_admin', 'back_office', 'vendor'], function 
             $e = $check($x, $v, $po, $sc, $oq, $rq, $w);
             $rows[] = ['n' => $rn, 'vendor_id' => $v['id'] ?? null, 'vendor' => $v['name'] ?? $g('vendor'), 'po' => $po, 'sku' => $sku, 'product' => $g('product') ?: 'Necklace',
                 'order' => $oq ?: $rq, 'ready' => $rq, 'scope' => $sc, 'metal' => $g('metal'), 'plating' => $g('plating'), 'weight' => $g('weight'), 'length' => $g('length'),
-                'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => $g('stone'), 'date' => excel_date($g('date')), 'spec' => $g('spec'),
-                'detail' => '', 'instructions' => '', 'img' => $img, 'errors' => $e, 'warnings' => $w,
-                'raw' => array_map(fn($c) => $c === 'image' ? ($img ? 'yes' : '') : ($map[$c] === null ? '' : ($r[$map[$c]] ?? '')), ['vendor', 'po', 'sku', 'image', 'style', 'stone', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec'])];
+                'lock' => $g('lock'), 'stamping' => $g('stamping'), 'style' => $g('style'), 'stone' => stone_join($g('stone'), $g('setting')), 'date' => excel_date($g('date')), 'spec' => $g('spec'),
+                'detail' => '', 'instructions' => $g('instr'), 'img' => $img, 'errors' => $e, 'warnings' => $w,
+                'raw' => array_map(fn($c) => $c === 'image' ? ($img ? 'yes' : '') : ($map[$c] === null ? '' : ($r[$map[$c]] ?? '')), ['vendor', 'po', 'sku', 'image', 'style', 'stone', 'setting', 'product', 'order', 'ready', 'scope', 'metal', 'plating', 'weight', 'length', 'lock', 'stamping', 'date', 'spec', 'instr'])];
         }
     }
     $saved = save_upload($f, 'imports', ['xlsx', 'csv', 'xls']);
@@ -508,16 +509,17 @@ api('GET', 'import/template', ['super_admin', 'back_office', 'vendor'], function
         $v = role() === 'vendor' ? val('SELECT name FROM vendors WHERE id=?', [user()['vendor_id']]) : 'Ashok Jewels';
         $d = fn($n) => date('d-m-Y', strtotime("+$n days"));
         $rows = [IMPORT_COLS,
-            [$v, '81966', 'KNK01268FS0033', '', 'KP-FS0033', 'CZ / Prong', 'Necklace', 1150, 1150, 'Bulk 100%', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS', $d(3), 'Spec.pdf'],
-            [$v, '81966', 'RNG00451', '', 'KP-RG451', 'CZ / Prong', 'Ring', 500, 500, 'Bulk 100%', '925 Silver', 'White rhodium', '2.40 g', 'Size 6', '', '925', $d(3), 'CAD.jpg'],
-            ['Nirvana', '82001', 'ABC001', '', 'KP-ABC1', 'MOP / Bezel', 'Pendant', 700, 700, 'AQL-1.5', '925 Silver', 'White rhodium', '1.20 g', '20 mm', '', '925', $d(4), ''],
-            ['Nirvana', '82002', 'ABC002', '', 'KP-ABC2', '—', 'Chain', 10, 10, 'Sample', '925 Silver', '', '4.00 g', '20 inch', 'Lobster lock', '925', $d(4), ''],
-            [$v, '81968', 'KNK00511BR0007', '', 'KP-BR0007', 'Marquise CZ / Prong', 'Bracelet', 300, 300, 'Defined 50', '925 Silver', 'Rose gold', '6.20 g', '7 inch', 'Box clasp', '925 + ARCL', $d(5), '']];
+            [$v, '81966', 'KNK01268FS0033', '', 'KP-FS0033', 'CZ', 'Prong', 'Necklace', 1150, 1150, 'Bulk 100%', '925 Silver', 'White rhodium', '2.75 g', '16+2 inch', 'Lobster lock', '925 + ARCL + LGDS', $d(3), 'Spec.pdf', 'Length tolerance ±0.25 inch; check clasp strength'],
+            [$v, '81966', 'RNG00451', '', 'KP-RG451', 'CZ', 'Micro-Pave', 'Ring', 500, 500, 'Bulk 100%', '925 Silver', 'White rhodium', '2.40 g', 'Size 6', '', '925', $d(3), 'CAD.jpg', 'No missing stones allowed — 100% loupe check'],
+            ['Nirvana', '82001', 'ABC001', '', 'KP-ABC1', 'MOP', 'Bezel', 'Pendant', 700, 700, 'AQL-1.5', '925 Silver', 'White rhodium', '1.20 g', '20 mm', '', '925', $d(4), '', ''],
+            ['Nirvana', '82002', 'ABC002', '', 'KP-ABC2', '—', '—', 'Chain', 10, 10, 'Sample', '925 Silver', '', '4.00 g', '20 inch', 'Lobster lock', '925', $d(4), '', 'Pack each chain in a separate zip pouch'],
+            [$v, '81968', 'KNK00511BR0007', '', 'KP-BR0007', 'Marquise CZ', 'Prong', 'Bracelet', 300, 300, 'Defined 50', '925 Silver', 'Rose gold', '6.20 g', '7 inch', 'Box clasp', '925 + ARCL', $d(5), '', '']];
         $name = 'QTRACK_QC_REQUIREMENT_TEMPLATE.xlsx';
     }
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $name . '"');
-    echo xlsx_write($rows, 'QC Requirement'); exit;
+    $opt = in_('errors') ? [] : ['widths' => [0 => 16, 2 => 20, 5 => 16, 6 => 16, 19 => 55], 'lists' => [6 => SETTING_TYPES]];
+    echo xlsx_write($rows, 'QC Requirement', $opt); exit;
 });
 
 /* ----- design-wise edit inside a generated job card (Super Admin / Back Office / QC Manager) ----- */

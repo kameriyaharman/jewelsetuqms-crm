@@ -24,7 +24,7 @@ import Team from './pages/Team';
 import Settings from './pages/Settings';
 import { ClientDash, VendorDash } from './pages/PortalDash';
 import { Notifications, Profile } from './pages/Account';
-import { AppHome, AppJob, AppHistory, AppAlerts, AppProfile } from './pages/Inspector';
+import { AppHome, AppJob, AppVendor, AppHistory, AppAlerts, AppProfile } from './pages/Inspector';
 import AppInspect from './pages/AppInspect';
 import AppNewJob from './pages/AppNewJob';
 
@@ -47,6 +47,7 @@ export default function App() {
     <Route element={G(['inspector'], <MShell />)}>
       <Route path="/app" element={<AppHome />} />
       <Route path="/app/job/:id" element={<AppJob />} />
+      <Route path="/app/vendor/:v/:c" element={<AppVendor />} />
       <Route path="/app/inspect/:id" element={<AppInspect />} />
       <Route path="/app/new" element={<AppNewJob />} />
       <Route path="/app/job/:id/add" element={<AppNewJob />} />

@@ -102,8 +102,13 @@ api('GET', 'manuals/job', R_ALL, function () {
     return ['rows' => $m, 'acked' => manual_acked((int)$job['id'], (int)user()['id'], $m)];
 });
 api('POST', 'manuals/ack', ['inspector'], function () {
-    $job = job_load((int)in_('job_id')); if (!$job || !can_see_job($job)) fail('Not found', 404);
-    foreach (job_manuals($job) as $m) if ($m['priority'] === 'HIGH') insert('manual_acks', ['manual_id' => $m['id'], 'user_id' => user()['id'], 'job_id' => $job['id'], 'at' => now()]);
-    audit('job', (int)$job['id'], 'MANUAL_ACK', 'QC manual', null, 'Read & acknowledged by ' . user()['emp_code']);
+    // one job, or every job of a vendor group (inspector app vendor view)
+    $ids = array_filter(array_map('intval', (array)(in_('job_ids') ?: [in_('job_id')])));
+    if (!$ids) fail('Not found', 404);
+    foreach ($ids as $jid) {
+        $job = job_load($jid); if (!$job || !can_see_job($job)) fail('Not found', 404);
+        foreach (job_manuals($job) as $m) if ($m['priority'] === 'HIGH') insert('manual_acks', ['manual_id' => $m['id'], 'user_id' => user()['id'], 'job_id' => $job['id'], 'at' => now()]);
+        audit('job', (int)$job['id'], 'MANUAL_ACK', 'QC manual', null, 'Read & acknowledged by ' . user()['emp_code']);
+    }
     return ['ok' => true, 'message' => 'Thanks — acknowledgement saved.'];
 });
