@@ -120,12 +120,20 @@ api('POST', 'summary/send', R_INT, function () {
 /** Portal card: today's numbers for the logged-in client / vendor. */
 api('GET', 'summary/today', ['client', 'vendor'], function () {
     $u = user(); $key = role() === 'client' ? 'client:' . $u['client_id'] : 'vendor:' . $u['vendor_id'];
-    $m = daily_messages(today(), $key);
-    return ['date' => today(), 'msg' => $m ? array_diff_key($m[0], ['groups' => 1, 'html' => 1]) + ['rows' => array_map(fn($g) => array_diff_key($g, ['rows' => 1]), $m[0]['groups'])] : null];
+    $date = (string)in_('date', today());
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $date > today()) $date = today();
+    $m = daily_messages($date, $key);
+    // date list: every day with QC in the last 60 days (for the date chips / history)
+    [$col, $id] = role() === 'client' ? ['j.client_id', (int)$u['client_id']] : ['j.vendor_id', (int)$u['vendor_id']];
+    $days = all("SELECT i.insp_date d, COUNT(*) designs, SUM(i.inspected_qty) pcs, SUM(i.accepted_qty) ok, SUM(i.rejected_qty) rej FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id
+        WHERE $col=? AND i.insp_date>=? AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED') GROUP BY i.insp_date ORDER BY i.insp_date DESC", [$id, date('Y-m-d', strtotime('-60 days'))]);
+    foreach ($days as &$x) { foreach (['designs', 'pcs', 'ok', 'rej'] as $k) $x[$k] = (int)$x[$k]; $x['rate'] = $x['pcs'] ? round($x['rej'] * 100 / $x['pcs'], 1) : 0; } unset($x);
+    return ['date' => $date, 'today' => today(), 'days' => $days, 'msg' => $m ? array_diff_key($m[0], ['groups' => 1, 'html' => 1]) + ['rows' => array_map(fn($g) => array_diff_key($g, ['rows' => 1]), $m[0]['groups'])] : null];
 });
 /** Cron URL for shared hosting: /api/cron/daily?key=… (any time after the set time; sends once a day). */
 api('GET', 'cron/daily', null, function () {
     if (!hash_equals(setting('cron_key', 'x'), (string)in_('key'))) fail('Bad key', 403);
+    if (function_exists('att_tick')) att_tick(true);
     if (!daily_due()) return ['ok' => true, 'message' => 'Not due (off, already sent today, or before ' . setting('daily_summary_time', '19:30') . ').'];
     set_setting('daily_summary_last', today());
     return ['ok' => true] + daily_send(today(), null, true);

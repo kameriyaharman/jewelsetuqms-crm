@@ -394,8 +394,17 @@ api('POST', 'app/checkin', ['inspector'], function () {
     $v = one('SELECT * FROM vendors WHERE id=?', [$job['vendor_id']]);
     if (!empty($in['out'])) {
         $c = open_checkin((int)$me['id']); if (!$c) fail('You are not checked in.');
-        q('UPDATE checkins SET out_at=? WHERE id=?', [now(), $c['id']]); audit('job', (int)$job['id'], 'CHECK_OUT', 'factory', null, $v['name']);
-        return ['ok' => true, 'message' => 'Checked out from ' . $v['name'] . ' at ' . date('h:i A') . '.'];
+        $vv = one('SELECT * FROM vendors WHERE id=?', [$c['vendor_id']]) ?: $v;
+        $set = ['out_at' => now()];
+        $olat = (float)($in['lat'] ?? 0); $olng = (float)($in['lng'] ?? 0);
+        if ($olat || $olng) {   // GPS at check-out, verified against the factory pin when there is one
+            $set += ['out_lat' => (string)$olat, 'out_lng' => (string)$olng];
+            if ($vv['geo_lat'] !== null && $vv['geo_lat'] !== '') { $dd = geo_dist($olat, $olng, (float)$vv['geo_lat'], (float)$vv['geo_lng']);
+                $set += ['out_dist' => $dd, 'out_verified' => $dd <= (int)($vv['geo_radius'] ?: setting('geo_radius', '250')) + min(max((int)($in['acc'] ?? 0), 0), 100) ? 1 : 0]; }
+        }
+        update('checkins', $set, 'id=?', [$c['id']]); audit('job', (int)$c['job_id'], 'CHECK_OUT', 'factory', null, $vv['name']);
+        $min = (int)round((time() - strtotime($c['at'])) / 60);
+        return ['ok' => true, 'message' => 'Checked out from ' . $vv['name'] . ' at ' . date('h:i A') . ' · time at factory ' . intdiv($min, 60) . 'h ' . ($min % 60) . 'm.'];
     }
     $lat = (float)($in['lat'] ?? 0); $lng = (float)($in['lng'] ?? 0); $acc = (int)($in['acc'] ?? 0);
     if (!$lat && !$lng) fail('Location not received — allow location permission for this app and switch on GPS, then try again.');

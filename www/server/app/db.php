@@ -92,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 9) return;
+    if ($ver >= 10) return;
+    if ($ver === 9) { db_migrate_v10(); return; }
     if ($ver === 8) { db_migrate_v9(); return; }
     if ($ver === 7) { db_migrate_v8(); return; }
     if ($ver === 6) { db_migrate_v7(); return; }
@@ -183,6 +184,17 @@ function db_migrate_v8(): void {
 function db_migrate_v9(): void {
     try { db()->query('SELECT photo FROM users LIMIT 1'); } catch (Throwable $e) { db()->exec('ALTER TABLE users ADD COLUMN photo ' . (is_sqlite() ? 'TEXT' : 'VARCHAR(255)') . ' NULL'); }
     set_setting('schema_version', '9');
+    db_migrate_v10();
+}
+/** v10: check-out GPS + missed check-out flag / manager fix, for the attendance & visit log. */
+function db_migrate_v10(): void {
+    $T = is_sqlite() ? 'TEXT' : 'VARCHAR(40)';
+    foreach (['out_lat' => $T, 'out_lng' => $T, 'out_dist' => 'INT', 'out_verified' => 'INT', 'auto_flag' => 'VARCHAR(20)', 'out_note' => is_sqlite() ? 'TEXT' : 'VARCHAR(255)', 'out_by' => 'INT', 'reminded' => 'INT'] as $c => $t) {
+        try { db()->query("SELECT $c FROM checkins LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE checkins ADD COLUMN $c $t NULL"); }
+    }
+    if (setting('att_late_after', '') === '') set_setting('att_late_after', '10:30');
+    if (setting('att_remind_at', '') === '') set_setting('att_remind_at', '20:00');
+    set_setting('schema_version', '10');
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

@@ -4,9 +4,9 @@ import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
 import { Badge, Empty, Loader, Sel, useAction, useApi } from '../app/ui';
-import { fdate } from '../app/util';
+import { fdate, ymd } from '../app/util';
 
-const shift = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+const shift = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
 
 export default function Schedule() {
   const { me, refresh } = useAuth(); const r = me.user.role; const internal = ['super_admin', 'back_office', 'qc_manager'].includes(r);

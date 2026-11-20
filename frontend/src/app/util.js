@@ -28,8 +28,10 @@ export function fdt(d) {
   return `${String(x.getDate()).padStart(2, '0')} ${M[x.getMonth()]} · ${String(h).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')} ${ap}`;
 }
 export const initials = (n = '') => (n.trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || '?');
-export const today = () => new Date().toISOString().slice(0, 10);
-export const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+/** Local calendar date (YYYY-MM-DD) — not UTC, so IST mornings before 5:30 stay on the right day. */
+export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const today = () => ymd(new Date());
+export const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
 export function scopeLabel(j) {
   if (!j) return '';
   if (j.scope === 'SAMPLE') return 'Sample QC';

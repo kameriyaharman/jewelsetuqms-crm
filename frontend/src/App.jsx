@@ -20,6 +20,7 @@ import ReportView from './pages/ReportView';
 import Approvals from './pages/Approvals';
 import Analytics from './pages/Analytics';
 import Manuals from './pages/Manuals';
+import Attendance from './pages/Attendance';
 import Team from './pages/Team';
 import Settings from './pages/Settings';
 import { ClientDash, VendorDash } from './pages/PortalDash';
@@ -79,6 +80,7 @@ export default function App() {
       <Route path="/approvals" element={G(['client', 'vendor', 'super_admin', 'qc_manager'], <Approvals />)} />
       <Route path="/analytics" element={G([...INT, 'client'], <Analytics />)} />
       <Route path="/manuals" element={G([...INT, 'client', 'vendor'], <Manuals />)} />
+      <Route path="/attendance" element={G(INT, <Attendance />)} />
       <Route path="/team" element={G(['super_admin', 'qc_manager', 'back_office'], <Team />)} />
       <Route path="/settings" element={G(INT, <Settings />)} />
       <Route path="/notifications" element={<Notifications />} />

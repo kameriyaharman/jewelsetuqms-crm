@@ -35,6 +35,7 @@ if (!isset($API[$key])) json_out(['error' => 'Not found: ' . $path], 404);
 if ($roles !== null) require_role(...$roles);
 if ($m === 'POST' && $path !== 'auth/login') csrf_check();
 if ($path !== 'cron/daily' && function_exists('daily_due') && daily_due()) after_response('daily_run_auto');
+if ($path !== 'cron/daily' && function_exists('att_due') && att_due()) after_response('att_tick');
 try {
     $out = $fn();
     json_out($out ?? ['ok' => true]);

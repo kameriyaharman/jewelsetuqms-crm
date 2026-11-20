@@ -4,7 +4,7 @@ import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
 import { Badge, Empty, Icon, InspSt, Loader, Sel, useAction, useApi, useForm, useToast, Avatar } from '../app/ui';
-import { fdate, fdt, initials } from '../app/util';
+import { fdate, fdt, initials, today } from '../app/util';
 
 const TABS = [['internal', 'All staff'], ['inspector', 'Inspectors'], ['qc_manager', 'Managers'], ['back_office', 'Back office'], ['portal', 'Client / vendor logins']];
 const blank = { id: 0, role: 'inspector', name: '', emp_code: '', email: '', designation: '', client_id: '', vendor_id: '', phone: '', location: '', area: '', joined_on: '', status: 'ACTIVE', password: '' };
@@ -81,7 +81,7 @@ function LoginBox({ u, url, onReset }) {
 
 /** Inspector leave: OFF / ON LEAVE status and blocks assignment on those days. */
 function Leaves({ u, canEdit, reload }) {
-  const t = new Date().toISOString().slice(0, 10);
+  const t = today();
   const [L, setL] = useState({ from: t, to: t, note: '' }); const { run, busy } = useAction();
   return <div className="mt"><h2 className="mb" style={{ fontSize: 15 }}>Leave / off days</h2>
     {!(u.leaves || []).length ? <p className="muted" style={{ fontSize: 12.5 }}>No leave marked.</p> : u.leaves.map((l) => <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--line)', fontSize: 13 }}>

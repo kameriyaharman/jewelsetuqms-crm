@@ -41,6 +41,10 @@ export function AppHome() {
   </MPage>;
 }
 
+/** Best-effort GPS for check-out (never blocks check-out if the phone cannot give a fix in 12 s). */
+const gpsOrNull = () => new Promise((ok) => { if (!navigator.geolocation) return ok(null);
+  navigator.geolocation.getCurrentPosition((p) => ok({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }), () => ok(null), { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }); });
+
 /** Home screen step 1: check-in at the factory before opening any job (vendor auto-picked from GPS, or chosen). */
 function HomeCheckIn({ d, reload }) {
   const toast = useToast(); const [busy, setBusy] = useState(false); const c = d.checkin;
@@ -49,7 +53,7 @@ function HomeCheckIn({ d, reload }) {
   const send = async (out) => {
     setBusy(true);
     try {
-      if (out) { const r = await post('app/checkin', { out: 1, job_id: c.job_id }); toast(r.message); reload(); setBusy(false); return; }
+      if (out) { const g = await gpsOrNull(); const r = await post('app/checkin', { out: 1, job_id: c.job_id, ...(g || {}) }); toast(r.message); reload(); setBusy(false); return; }
       if (!navigator.geolocation) throw new Error('This phone/browser cannot share location.');
       const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? 'Location permission denied — allow location for this site in browser settings and try again.' : 'Could not get GPS location — switch on location / GPS and try again outdoors.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
       const r = await post('app/checkin', { job_id: pick ? +pick : 0, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) });
@@ -59,7 +63,7 @@ function HomeCheckIn({ d, reload }) {
   };
   if (c) return <div className="mcard" style={{ borderColor: '#9cc3e6', background: '#f1f7fd' }}><b style={{ color: '#1f5f99' }}>🔵 ON-SITE at {c.vendor_name} · since {new Date(c.at.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>
     <small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>{+c.verified ? `GPS verified ✓ · ${c.dist_m} m from factory pin` : 'Factory pin not set yet — your location was sent to Admin'} · open the vendor below to start QC</small>
-    <button className="btn sm" disabled={busy} onClick={() => send(true)}>Check-out from factory</button></div>;
+    <button className="btn sm" disabled={busy} onClick={() => send(true)}>{busy ? 'Getting GPS…' : '🚪 CHECK-OUT from factory'}</button></div>;
   return <div className="mcard" style={{ borderColor: '#e2c98a' }}><b>📍 Step 1 · Arrived at the factory?</b>
     <small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>Check-in first{d.geo_required ? ' — jobs open for inspection only after check-in' : ''}. GPS finds your factory automatically.</small>
     {vendors.length > 1 && <select value={pick} onChange={(e) => setPick(e.target.value)} style={{ marginBottom: 8 }}><option value="">Auto-detect factory by GPS</option>{vendors.map((v) => <option key={v.id} value={v.job}>{v.name}{v.loc ? ' · ' + v.loc : ''}</option>)}</select>}
@@ -225,7 +229,7 @@ function CheckIn({ d, reload }) {
   const send = async (out) => {
     setBusy(true);
     try {
-      if (out) { const r = await post('app/checkin', { job_id: d.job.id, out: 1 }); toast(r.message); reload(); setBusy(false); return; }
+      if (out) { const g = await gpsOrNull(); const r = await post('app/checkin', { job_id: d.job.id, out: 1, ...(g || {}) }); toast(r.message); reload(); setBusy(false); return; }
       if (!navigator.geolocation) throw new Error('This phone/browser cannot share location.');
       const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? 'Location permission denied — allow location for this site in browser settings and try again.' : 'Could not get GPS location — switch on location / GPS and try again outdoors.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
       const r = await post('app/checkin', { job_id: d.job.id, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) });

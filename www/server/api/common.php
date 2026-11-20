@@ -127,6 +127,28 @@ api('GET', 'pdf', R_ALL, function () {
         $stored = $job['po_pdf'] ? UPLOAD_DIR . '/' . $job['po_pdf'] : null;
         if ($stored && is_file($stored) && !in_('fresh')) { $pdf = file_get_contents($stored); $name = basename($stored); }
         else [$pdf, $name] = job_pdf($jid, $pub);
+    } elseif (in_('items') || in_('visit_vendor')) {
+        // Option B: chosen designs merged · Option C: vendor + date visit report
+        $done = is_internal() ? ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'] : ['APPROVED'];
+        if (in_('items')) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', (string)in_('items'))))));
+            if (count($ids) < 1 || count($ids) > 200) fail('Choose between 1 and 200 designs.');
+            $rows = all('SELECT id, job_id, status FROM qc_items WHERE id IN (' . implode(',', $ids) . ')');
+            $mode = 'MULTI-DESIGN CUSTOM REPORT'; $tag = 'CUSTOM-' . date('ymd-Hi');
+        } else {
+            $vid = (int)in_('visit_vendor'); $date = (string)in_('date'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) fail('Choose a date.');
+            $cid = (int)in_('client');
+            $rows = all('SELECT i.id, i.job_id, i.status FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE j.vendor_id=? AND i.insp_date=?' . ($cid ? ' AND j.client_id=' . $cid : ''), [$vid, $date]);
+            $mode = 'VENDOR VISIT REPORT · ' . date('d-M-Y', strtotime($date)); $tag = 'VISIT-' . date('dmY', strtotime($date));
+        }
+        $rows = array_values(array_filter($rows, fn($r) => in_array($r['status'], $done, true)));
+        $ok = []; $clients = [];
+        foreach ($rows as $r) { $jb = job_load((int)$r['job_id']); if ($jb && can_see_job($jb)) { $ok[] = (int)$r['id']; $clients[$jb['client_id']] = 1; } }
+        if (!$ok) fail(is_internal() ? 'No submitted / approved designs found for this selection.' : 'No approved reports found for this selection.', 404);
+        if (count($clients) > 1) fail('Choose designs of one client only — each client gets its own branded report.');
+        $j0 = job_load((int)one('SELECT job_id FROM qc_items WHERE id=?', [$ok[0]])['job_id']);
+        $no = 'JS/' . date('Y') . '/' . date('m') . '/' . strtoupper($j0['client_code']) . '_' . vendor_short($j0) . '/' . $tag;
+        [$pdf, $name] = job_pdf((int)$j0['id'], false, $ok, ['no' => $no, 'mode' => $mode, 'state' => count($ok) . ' DESIGN' . (count($ok) > 1 ? 'S' : '') . ' · GENERATED ' . strtoupper(date('d-M-Y h:i A'))]);
     } elseif ($old = (string)in_('file')) {
         if (!preg_match('#^reports/[A-Za-z0-9_\-]+\.pdf$#', $old) || !is_internal()) fail('Not found', 404);
         $pdf = (string)@file_get_contents(UPLOAD_DIR . '/' . $old); $name = basename($old);
