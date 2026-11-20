@@ -248,3 +248,48 @@ api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], fu
     if ($ip && $done) notify($ins, "$done QC job(s) assigned to you · PO " . implode(', ', array_keys($pos)) . ($date ? ' · ' . fdate($date) : ''), 'app');
     return ['ok' => true, 'message' => "$done job(s) " . ($ip ? "assigned to {$ip['emp_code']} · {$ip['name']}" : 'unassigned') . ($skip ? ' · skipped (closed/under review): ' . implode(', ', array_slice($skip, 0, 8)) : '') . '.'];
 });
+
+
+/** Super Admin: permanently delete job card(s) — designs, inspection data, photos, defects, files and PDFs. Reason is kept in the audit log. */
+function delete_job(int $id, string $reason): ?string {
+    $job = job_load($id); if (!$job) return null;
+    $items = all('SELECT id, pdf_path, report_no FROM qc_items WHERE job_id=?', [$id]); $iids = array_map(fn($i) => (int)$i['id'], $items);
+    // burn the numbers so they are never issued again
+    if ($job['job_no'] && preg_match('/^JS-(\d{4})-(\d+)$/', $job['job_no'], $m)) set_setting('seq_job_' . $m[1], (string)max((int)setting('seq_job_' . $m[1], '0'), (int)$m[2]));
+    if ($job['req_no'] && preg_match('/(\d+)$/', $job['req_no'], $m)) set_setting('seq_req', (string)max((int)setting('seq_req', '0'), (int)$m[1]));
+    foreach ($items as $i) if ($i['report_no'] && preg_match('#^(.*/)(\d+)$#', $i['report_no'], $m)) set_setting('seq_rep_' . md5($m[1]), (string)max((int)setting('seq_rep_' . md5($m[1]), '0'), (int)$m[2]));
+    $files = [];
+    if ($iids) {
+        $in = implode(',', $iids);
+        foreach (all("SELECT path FROM item_photos WHERE item_id IN ($in)") as $p) $files[] = $p['path'];
+        q("DELETE FROM item_photos WHERE item_id IN ($in)"); q("DELETE FROM item_defects WHERE item_id IN ($in)");
+        foreach ($items as $i) if ($i['pdf_path']) $files[] = $i['pdf_path'];
+    }
+    foreach (all('SELECT path FROM attachments WHERE job_id=?', [$id]) as $a) $files[] = $a['path'];
+    if (!empty($job['po_pdf'])) $files[] = $job['po_pdf'];
+    q('DELETE FROM attachments WHERE job_id=?', [$id]); q('DELETE FROM qc_items WHERE job_id=?', [$id]); q('DELETE FROM manual_acks WHERE job_id=?', [$id]);
+    q('UPDATE checkins SET out_at=COALESCE(out_at, ?) WHERE job_id=?', [now(), $id]);   // visit history stays, open check-in on this job is closed
+    q("DELETE FROM notifications WHERE link IN (?, ?, ?)", ['request/' . $id, 'app/job/' . $id, 'jobs?id=' . $id]);
+    if ($iids) q('DELETE FROM notifications WHERE ' . implode(' OR ', array_map(fn($x) => "link='report/$x' OR link='review/$x' OR link='app/inspect/$x'", $iids)));
+    q('DELETE FROM qc_jobs WHERE id=?', [$id]);
+    foreach (array_unique(array_filter($files)) as $f) {   // remove files no other record still uses
+        if (str_contains($f, '..')) continue;
+        if (!val('SELECT COUNT(*) FROM item_photos WHERE path=?', [$f]) && !val('SELECT COUNT(*) FROM attachments WHERE path=?', [$f]) && is_file(UPLOAD_DIR . '/' . $f)) @unlink(UPLOAD_DIR . '/' . $f);
+    }
+    $label = ($job['job_no'] ?: $job['req_no']) . " · PO {$job['po_no']} · {$job['client_code']} – {$job['vendor_name']} · " . count($iids) . ' design(s) · status ' . $job['status'];
+    audit('job', $id, 'DELETED', $label, null, $reason);
+    if ($job['inspector_id'] && !in_array($job['status'], ['APPROVED', 'EMAILED', 'CLOSED', 'CANCELLED'], true)) notify((int)$job['inspector_id'], 'Job card ' . ($job['job_no'] ?: $job['req_no']) . ' was deleted by Super Admin', 'app');
+    return $job['job_no'] ?: $job['req_no'];
+}
+api('POST', 'jobs/delete', ['super_admin'], function () {
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array)(in_('ids') ?: [in_('id')])))));
+    $reason = trim((string)in_('reason'));
+    if (!$ids) fail('Select at least one job card.');
+    if (mb_strlen($reason) < 3) fail('Write a reason for deleting (kept in the audit log).');
+    $done = [];
+    db()->beginTransaction();
+    try { foreach ($ids as $id) if ($n = delete_job($id, $reason)) $done[] = $n; db()->commit(); }
+    catch (Throwable $e) { db()->rollBack(); throw $e; }
+    if (!$done) fail('Job card not found.', 404);
+    return ['ok' => true, 'deleted' => $done, 'message' => count($done) . ' job card(s) deleted permanently: ' . implode(', ', $done) . '.'];
+});

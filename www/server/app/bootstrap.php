@@ -222,21 +222,26 @@ function scope_label(array $j): string {
         default => 'Bulk · 100%',
     };
 }
+/** Numbers never repeat, even after a job is deleted: next = max(last issued, highest in table) + 1. */
+function seq_next(string $key, int $highest): int {
+    $n = max((int)setting('seq_' . $key, '0'), $highest) + 1; set_setting('seq_' . $key, (string)$n); return $n;
+}
+function seq_tail(array $vals): int { $m = 0; foreach ($vals as $v) if (preg_match('/(\d+)$/', (string)$v, $x)) $m = max($m, (int)$x[1]); return $m; }
 function next_req_no(): string {
-    $n = (int)val('SELECT COUNT(*) FROM qc_jobs') + 101;
-    while (val('SELECT id FROM qc_jobs WHERE req_no=?', ['REQ-' . $n])) $n++;
+    $n = seq_next('req', max(100, seq_tail(array_column(all("SELECT req_no FROM qc_jobs WHERE req_no LIKE 'REQ-%'"), 'req_no'))));
+    while (val('SELECT id FROM qc_jobs WHERE req_no=?', ['REQ-' . $n])) $n = seq_next('req', $n);
     return 'REQ-' . $n;
 }
 function next_job_no(): string {
-    $y = date('Y'); $n = (int)val("SELECT COUNT(*) FROM qc_jobs WHERE job_no LIKE ?", ["JS-$y-%"]) + 1;
-    while (val('SELECT id FROM qc_jobs WHERE job_no=?', [sprintf('JS-%s-%04d', $y, $n)])) $n++;
+    $y = date('Y'); $n = seq_next("job_$y", seq_tail(array_column(all('SELECT job_no FROM qc_jobs WHERE job_no LIKE ?', ["JS-$y-%"]), 'job_no')));
+    while (val('SELECT id FROM qc_jobs WHERE job_no=?', [sprintf('JS-%s-%04d', $y, $n)])) $n = seq_next("job_$y", $n);
     return sprintf('JS-%s-%04d', $y, $n);
 }
 /** Report no. as in sample: JS/{YYYY}/{MM}/{CLIENT}_{VENDOR}/{SERIAL} — serial per client+vendor per month */
 function next_report_no(array $job): string {
     $p = 'JS/' . date('Y') . '/' . date('m') . '/' . strtoupper($job['client_code']) . '_' . vendor_short($job) . '/';
-    $n = (int)val("SELECT COUNT(*) FROM qc_items WHERE report_no LIKE ? AND report_no NOT LIKE ?", [$p . '%', $p . 'PO-%']) + 1;
-    while (val('SELECT id FROM qc_items WHERE report_no=?', [$p . sprintf('%03d', $n)])) $n++;
+    $n = seq_next('rep_' . md5($p), seq_tail(array_column(all('SELECT report_no FROM qc_items WHERE report_no LIKE ? AND report_no NOT LIKE ?', [$p . '%', $p . 'PO-%']), 'report_no')));
+    while (val('SELECT id FROM qc_items WHERE report_no=?', [$p . sprintf('%03d', $n)])) $n = seq_next('rep_' . md5($p), $n);
     return $p . sprintf('%03d', $n);
 }
 function po_report_no(array $job): string {

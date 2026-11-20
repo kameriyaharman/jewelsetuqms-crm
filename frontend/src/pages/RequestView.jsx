@@ -7,15 +7,16 @@ import { fileUrl, pdfUrl, post, upload } from '../app/api';
 import { Badge, Empty, Flow, Icon, Loader, Modal, Result, Sel, useAction, useApi, useForm, useToast, Thumb } from '../app/ui';
 import { fdate, fdt, num, today } from '../app/util';
 import { SchedulePanel } from './Requests';
+import { DeleteJobs } from './Jobs';
 
 const FLOW = ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'EMAILED', 'CLOSED'];
 const SCOPES = [['JOB', 'Same as job'], ['BULK100', 'Bulk 100%'], ['AQL1.5', 'AQL 1.5'], ['AQL2.5', 'AQL 2.5'], ['AQL4.0', 'AQL 4.0'], ['DEFINED', 'Defined sample qty'], ['SAMPLE', 'Sample QC']];
 
 export default function RequestView() {
-  const { id } = useParams(); const { me, refresh } = useAuth(); const r = me.user.role; const nav = useNavigate();
+  const { id } = useParams(); const { me, refresh } = useAuth(); const r = me.user.role; const nav = useNavigate(); const toast = useToast();
   const q = useApi('request', { id }); const opts = useApi('options'); const { run, busy } = useAction();
   const act = async (body, confirmMsg) => { if (confirmMsg && !window.confirm(confirmMsg)) return; const x = await run(() => post('job/action', { id, ...body })); if (x) { q.reload(); refresh(); } };
-  const [sched, setSched] = useState(false); const [edit, setEdit] = useState(null); const [lot, setLot] = useState(null); const [fc, setFc] = useState(null); const [man, setMan] = useState(false);
+  const [sched, setSched] = useState(false); const [edit, setEdit] = useState(null); const [lot, setLot] = useState(null); const [fc, setFc] = useState(null); const [man, setMan] = useState(false); const [delJob, setDelJob] = useState(false);
   return <Loader q={q}>{(d) => { const j = d.job, c = d.can; const cur = j.status === 'RETURNED' ? 'UNDER_REVIEW' : j.status === 'DRAFT' ? 'REQUESTED' : j.status;
     return <Page title={(j.job_no || j.req_no) + ' · PO ' + j.po_no} sub={`${j.client_name} — ${j.vendor_name} · ${j.source} · created ${fdt(j.created_at)}`}
       actions={<>{c.edit && <Link className="btn" to={`/request/${j.id}/edit`}>Edit</Link>}{c.schedule && ['REQUESTED', 'DRAFT'].includes(j.status) && <button className="btn pri" onClick={() => setSched(!sched)}>Schedule</button>}
@@ -79,6 +80,9 @@ export default function RequestView() {
           {j.status === 'PARTIAL' && <div className="card" style={{ borderColor: '#f0c79a' }}><h2 className="mb">Partial QC done — job open</h2>
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>All lots so far are approved, but some SKUs have not reached their order qty. Add the next QC lot when the vendor presents the balance / repaired pieces, or force close if the client accepts a short shipment.</p>
             {d.items.filter((i) => i.line && !i.line.complete).map((i) => <div key={i.id} className="cum" style={{ marginBottom: 6 }}><b className="mono">{i.sku}</b><span>Order {num(i.line.order)}</span><span className="ok">OK {num(i.line.accepted)}</span><span className="p">Pending {num(i.line.pending)}</span></div>)}</div>}
+          {r === 'super_admin' && <div className="card" style={{ padding: 12 }}><button className="btn block sm" style={{ color: 'var(--ruby)' }} onClick={() => setDelJob(true)}>🗑 Delete job card</button>
+            <small className="muted" style={{ display: 'block', marginTop: 6, fontSize: 11.5 }}>Super Admin only · removes designs, inspection data &amp; reports permanently</small></div>}
+          {delJob && <DeleteJobs jobs={[j]} onClose={() => setDelJob(false)} onDone={(x) => { setDelJob(false); toast(x.message); nav('/jobs'); }} />}
           {c.cancel && <div className="card"><button className="btn block" style={{ color: 'var(--ruby)' }} disabled={busy} onClick={async () => { await act({ act: 'cancel' }, 'Cancel this QC request?'); }}>Cancel request</button></div>}
           <div className="card"><h2 className="mb">Activity</h2>
             {!d.log.length ? <Empty>No activity yet.</Empty> : <div className="timeline">{d.log.map((l) => <div key={l.id}><b>{l.action.replace(/_/g, ' ')}</b> {l.new_val ? '· ' + String(l.new_val).slice(0, 60) : ''}<small>{fdt(l.created_at)}</small><br /><span className="muted" style={{ fontSize: 12 }}>{l.uname || 'System'}</span></div>)}</div>}

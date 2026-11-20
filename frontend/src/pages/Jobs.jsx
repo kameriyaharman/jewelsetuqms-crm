@@ -12,9 +12,10 @@ const BULK = ['SCHEDULED', 'ASSIGNED', 'REQUESTED', 'IN_PROGRESS', 'PARTIAL'];
 
 export default function Jobs() {
   const { me, refresh } = useAuth(); const canAssign = ['super_admin', 'qc_manager', 'back_office'].includes(me.user.role);
+  const isSA = me.user.role === 'super_admin'; const canPick = (j) => isSA || BULK.includes(j.status);
   const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'ALL'; const qs = sp.get('q') || '';
   const q = useApi('jobs', { f, q: qs });
-  const [search, setSearch] = useState(qs); const [pick, setPick] = useState(new Set()); const [bulk, setBulk] = useState({ inspector_id: '', date: '' });
+  const [search, setSearch] = useState(qs); const [pick, setPick] = useState(new Set()); const [del, setDel] = useState(null); const [bulk, setBulk] = useState({ inspector_id: '', date: '' });
   const [lot, setLot] = useState(null); const { run, busy } = useAction();
   useEffect(() => { setPick(new Set()); }, [f, qs]);
   const go = (o) => { const n = { f, ...(qs ? { q: qs } : {}), ...o }; Object.keys(n).forEach((k) => !n[k] && delete n[k]); setSp(n); };
@@ -44,17 +45,19 @@ export default function Jobs() {
           <input type="date" value={bulk.date} onChange={(e) => setBulk({ ...bulk, date: e.target.value })} title="QC date (optional)" />
           <button className="btn gold" disabled={busy || !bulk.inspector_id} onClick={doBulk}>ASSIGN SELECTED ({pick.size} JOBS)</button>
           <button className="btn" style={{ background: '#fff', color: 'var(--ruby)', borderColor: '#fff' }} disabled={busy} onClick={doUnassign}>UNASSIGN SELECTED</button>
+          {isSA && <button className="btn" style={{ background: 'var(--ruby)', color: '#fff', borderColor: 'var(--ruby)' }} disabled={busy} onClick={() => setDel(d.rows.filter((j) => pick.has(j.id)))}>🗑 DELETE SELECTED</button>}
           <button className="btn sm" onClick={() => setPick(new Set())}>Clear</button></div>}
+        {del && <DeleteJobs jobs={del} onClose={() => setDel(null)} onDone={() => { setDel(null); setPick(new Set()); q.reload(); refresh(); }} />}
         {!d.rows.length ? <Empty>No jobs.</Empty> : view === 'cards' ? <div className="cards">{d.rows.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
             <Link to={'/request/' + j.id} className="pimg"><Thumb src={j.img} size={150} alt={j.job_no} /></Link>
             <div className="pbody"><Link className="strong mono" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><b>{j.vendor_name}</b><small className="muted">{j.client_code} · PO {j.po_no} · {j.skus} SKU</small>
               <small>{fdate(j.scheduled_date, 'd M Y')} {j.time_slot}</small><small>{j.insp_code ? `${j.insp_code} · ${j.insp_name}` : 'Not assigned'}</small></div>
             <div className="pfoot">{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
               {canAssign && OPEN.includes(j.status) && <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button>}</div></div>)}</div>
-          : <div className="tbl-wrap"><table className="t"><thead><tr>{canAssign && <th style={{ width: 28 }}><input type="checkbox" title="Select all" checked={d.rows.filter((j) => BULK.includes(j.status)).length > 0 && d.rows.filter((j) => BULK.includes(j.status)).every((j) => pick.has(j.id))} onChange={(e) => setPick(e.target.checked ? new Set(d.rows.filter((j) => BULK.includes(j.status)).map((j) => j.id)) : new Set())} /></th>}
+          : <div className="tbl-wrap"><table className="t"><thead><tr>{canAssign && <th style={{ width: 28 }}><input type="checkbox" title="Select all" checked={d.rows.filter((j) => canPick(j)).length > 0 && d.rows.filter((j) => canPick(j)).every((j) => pick.has(j.id))} onChange={(e) => setPick(e.target.checked ? new Set(d.rows.filter((j) => canPick(j)).map((j) => j.id)) : new Set())} /></th>}
             <th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKU</th>{f === 'OPEN' ? <><th className="num">Order</th><th className="num">Accepted</th><th className="num">Balance</th></> : <th>QC date</th>}<th>Inspector</th><th>Status</th></tr></thead><tbody>
           {d.rows.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
-            {canAssign && <td>{BULK.includes(j.status) && <input type="checkbox" checked={pick.has(j.id)} onChange={() => toggle(j.id)} />}</td>}
+            {canAssign && <td>{canPick(j) && <input type="checkbox" checked={pick.has(j.id)} onChange={() => toggle(j.id)} />}</td>}
             <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.job_no} /><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></div></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono"><a href="#" onClick={(e) => { e.preventDefault(); setSearch(j.po_no); go({ q: j.po_no, id: '' }); }}>{j.po_no}</a></td><td>{+j.skus === 1 ? <span className="mono">{j.sku1}</span> : `${j.skus} SKUs`}</td>
             {f === 'OPEN' ? <><td className="num">{num(j.bal?.order)}</td><td className="num ok-t"><b>{num(j.bal?.accepted)}</b></td><td className="num bad-t"><b>{num(j.bal?.pending)}</b></td></> : <>
             <td>{fdate(j.scheduled_date, 'd M')} <small>{j.time_slot}</small></td></>}<td>{j.insp_code ? `${j.insp_code} · ${j.insp_name.split(' ')[0]}` : '—'}</td>
@@ -96,4 +99,19 @@ function AssignPanel({ id, onDone }) {
       <label className="chk f"><input type="checkbox" checked={F.f.notify_vendor} onChange={(e) => F.set('notify_vendor', e.target.checked)} /> Vendor — gate entry notice</label>
       <button className="btn pri block" disabled={busy || (!F.f.inspector_id && (!d.job.inspector_id || (!d.unassign_ok && !F.f.force)))} style={!F.f.inspector_id && d.job.inspector_id ? { background: 'var(--ruby)', borderColor: 'var(--ruby)' } : {}}>{F.f.inspector_id || !d.job.inspector_id ? 'ASSIGN INSPECTOR' : 'SAVE · MOVE TO UNASSIGNED'}</button>
     </form></div>}</Loader>;
+}
+
+/** Super Admin: permanently delete job card(s) — reason + typing DELETE to confirm. */
+export function DeleteJobs({ jobs, onClose, onDone }) {
+  const [reason, setReason] = useState(''); const [word, setWord] = useState(''); const { run, busy } = useAction();
+  const done = jobs.filter((j) => ['APPROVED', 'EMAILED', 'CLOSED', 'PARTIAL', 'SUBMITTED', 'UNDER_REVIEW', 'IN_PROGRESS'].includes(j.status));
+  const go = async () => { const r = await run(() => post('jobs/delete', { ids: jobs.map((j) => j.id), reason })); if (r) onDone(r); };
+  return <Modal open title={`Delete ${jobs.length} job card${jobs.length > 1 ? 's' : ''} permanently`} onClose={onClose}>
+    <div className="note ruby mb" style={{ fontSize: 12.5 }}>This removes the job card{jobs.length > 1 ? 's' : ''} with all designs, inspection data, photos, defects and PDF reports. <b>It cannot be undone.</b> Who deleted it, when and why stays in the audit log.</div>
+    <div style={{ maxHeight: 150, overflow: 'auto', marginBottom: 10, fontSize: 12.5 }}>{jobs.map((j) => <div key={j.id}>• <b className="mono">{j.job_no || j.req_no}</b> · PO {j.po_no} · {j.client_code} – {j.vendor_name} · <Badge s={j.status} /></div>)}</div>
+    {done.length > 0 && <div className="note gold mb" style={{ fontSize: 12.5 }}>⚠️ {done.length} of these already have inspection work / reports ({[...new Set(done.map((j) => j.status))].join(', ')}). Their QC reports will be deleted too.</div>}
+    <div className="f"><label>Reason (required)</label><input type="text" value={reason} placeholder="e.g. Wrong PO imported — will re-import updated sheet" onChange={(e) => setReason(e.target.value)} /></div>
+    <div className="f"><label>Type <b>DELETE</b> to confirm</label><input type="text" value={word} onChange={(e) => setWord(e.target.value)} /></div>
+    <div className="actions"><button className="btn" onClick={onClose}>Cancel</button><button className="btn" style={{ background: 'var(--ruby)', color: '#fff', borderColor: 'var(--ruby)' }} disabled={busy || reason.trim().length < 3 || word.trim().toUpperCase() !== 'DELETE'} onClick={go}>{busy ? 'Deleting…' : `Delete ${jobs.length} job card${jobs.length > 1 ? 's' : ''}`}</button></div>
+  </Modal>;
 }
