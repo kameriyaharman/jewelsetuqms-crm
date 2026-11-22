@@ -11,7 +11,8 @@ export const SECTIONS = [
     t('phone', 'Phone (shown on site)'), t('whatsapp', 'WhatsApp number', 'Digits with country code, e.g. 918005933787'), a('whatsapp_text', 'WhatsApp pre-filled message'),
     t('email', 'Main email'), t('email2', 'Second email'), t('city', 'City / address line'),
     { k: 'cities', type: 'tags', label: 'Cities served', help: 'Shown in hero, footer and CTA cards.' },
-    a('footer_about', 'Footer description'), t('linkedin', 'Company LinkedIn URL') ] },
+    a('footer_about', 'Footer description'), t('linkedin', 'Company LinkedIn URL'),
+    t('credit_text', 'Footer credit — “Designed & Developed by …”'), t('credit_url', 'Footer credit link') ] },
   { key: 'seo', label: 'SEO & sharing', page: '/', fields: [
     t('title', 'Home page title (Google)', 'Around 50–60 characters.'), a('description', 'Default meta description', 'Around 150–160 characters.'),
     { k: 'og_image', type: 'image', label: 'Default share image', help: '1200 × 630 px — used on LinkedIn / WhatsApp when a page has no image.' },

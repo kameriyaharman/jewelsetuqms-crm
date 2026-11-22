@@ -10,31 +10,49 @@ const HOVER = 'a, button, [role="button"], label.drop, .post, .feat, .gate, .chi
 const TEXT = 'input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea, [contenteditable="true"]';
 
 export function Cursor() {
-  const dot = useRef(null); const ring = useRef(null);
+  const dot = useRef(null); const ring = useRef(null); const glow = useRef(null); const trail = useRef(null);
   const [on] = useState(() => finePointer() && !reduced());
   useEffect(() => {
     if (!on) return;
     document.documentElement.classList.add('has-cursor');
-    let x = innerWidth / 2, y = innerHeight / 2, rx = x, ry = y, raf = 0, shown = false;
+    const sparks = [...trail.current.children]; let si = 0;
+    let x = innerWidth / 2, y = innerHeight / 2, rx = x, ry = y, gx = x, gy = y, lx = x, ly = y, speed = 0, raf = 0, shown = false;
+    const spawn = (px, py, v) => { // a fading gold light particle at the pointer
+      const el = sparks[si++ % sparks.length]; const s = 3 + Math.random() * 4 + Math.min(v, 30) / 8;
+      el.style.cssText = `left:${px}px;top:${py}px;width:${s}px;height:${s}px;--dx:${(Math.random() - .5) * 26}px;--dy:${(Math.random() - .2) * 22}px`;
+      el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
+    };
     const move = (e) => {
       x = e.clientX; y = e.clientY;
-      if (!shown) { shown = true; rx = x; ry = y; dot.current.classList.add('show'); ring.current.classList.add('show'); }
+      if (!shown) { shown = true; rx = gx = lx = x; ry = gy = ly = y; [dot, ring, glow].forEach((r) => r.current.classList.add('show')); }
       dot.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      const d = Math.hypot(x - lx, y - ly); if (d > 9) { spawn(x, y, d); lx = x; ly = y; }
       const t = e.target instanceof Element ? e.target : null;
       const txt = t && t.closest(TEXT); const hov = !txt && t && t.closest(HOVER);
-      ring.current.classList.toggle('hover', !!hov); ring.current.classList.toggle('text', !!txt); dot.current.classList.toggle('text', !!txt);
-      ring.current.classList.toggle('dark', !!(t && t.closest('.pcard.dark, .navy-card, .side-pdf, .cta-card, .ftr, .mh, .certm .ch, .btn-navy')));
+      ring.current.classList.toggle('hover', !!hov); ring.current.classList.toggle('text', !!txt); dot.current.classList.toggle('text', !!txt); glow.current.classList.toggle('hover', !!hov);
     };
-    const loop = () => { rx += (x - rx) * 0.18; ry += (y - ry) * 0.18; ring.current.style.transform = `translate3d(${rx}px, ${ry}px, 0)`; raf = requestAnimationFrame(loop); };
-    const down = () => ring.current.classList.add('down'); const up = () => ring.current.classList.remove('down');
-    const leave = () => { shown = false; dot.current.classList.remove('show'); ring.current.classList.remove('show'); };
+    const loop = () => {
+      rx += (x - rx) * 0.2; ry += (y - ry) * 0.2; gx += (x - gx) * 0.08; gy += (y - gy) * 0.08;
+      speed += (Math.hypot(x - rx, y - ry) - speed) * 0.2;
+      const st = Math.min(speed / 40, 1);
+      ring.current.style.transform = `translate3d(${rx}px, ${ry}px, 0) scale(${1 + st * 0.25})`;
+      glow.current.style.transform = `translate3d(${gx}px, ${gy}px, 0) scale(${0.8 + st * 0.7})`; glow.current.style.opacity = shown ? 0.45 + st * 0.55 : 0;
+      raf = requestAnimationFrame(loop);
+    };
+    const down = () => { ring.current.classList.add('down'); for (let i = 0; i < 8; i++) spawn(x + (Math.random() - .5) * 20, y + (Math.random() - .5) * 20, 30); };
+    const up = () => ring.current.classList.remove('down');
+    const leave = () => { shown = false; [dot, ring, glow].forEach((r) => r.current.classList.remove('show')); };
     addEventListener('pointermove', move, { passive: true }); addEventListener('pointerdown', down); addEventListener('pointerup', up);
     document.addEventListener('mouseleave', leave); raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); removeEventListener('pointermove', move); removeEventListener('pointerdown', down); removeEventListener('pointerup', up);
       document.removeEventListener('mouseleave', leave); document.documentElement.classList.remove('has-cursor'); };
   }, [on]);
   if (!on) return null;
-  return <><div ref={ring} className="cur-ring" aria-hidden="true" /><div ref={dot} className="cur-dot" aria-hidden="true" /></>;
+  return <>
+    <div ref={glow} className="cur-glow" aria-hidden="true" />
+    <div ref={trail} className="cur-trail" aria-hidden="true">{Array.from({ length: 22 }, (_, i) => <i key={i} />)}</div>
+    <div ref={ring} className="cur-ring" aria-hidden="true" /><div ref={dot} className="cur-dot" aria-hidden="true" />
+  </>;
 }
 
 /* elements that fade / slide in when scrolled into view (siblings get a small stagger) */

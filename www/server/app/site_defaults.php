@@ -18,6 +18,8 @@ return [
         'linkedin' => '',
         'footer_about' => 'Independent jewellery quality consultancy — inspections, audits, QMS & training. Jaipur, Rajasthan, India.',
         'cities' => ['Jaipur', 'Mumbai', 'Surat', 'Delhi NCR'],
+        'credit_text' => 'CustomE Solution',
+        'credit_url' => 'https://customesolution.com',
     ],
     'seo' => [
         'title' => 'JEWELSETU — Jewellery Quality Inspections, Factory Audits & QMS | Jaipur',

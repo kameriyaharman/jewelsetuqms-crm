@@ -59,7 +59,8 @@ export function Footer() {
           {b.email2 && <li><Mail /><a href={'mailto:' + b.email2}>{b.email2}</a></li>}
           {b.city && <li><MapPin />{b.city}</li>}</ul></div>
       </div>
-      <div className="bottom"><span>© {new Date().getFullYear()} {b.name} {b.tagline}. All rights reserved.</span><span>{(b.cities || []).join(' · ')}</span></div>
+      <div className="bottom"><span>© {new Date().getFullYear()} {b.name} {b.tagline}. All rights reserved.</span>
+        {(b.credit_text ?? 'CustomE Solution') && <span className="credit">Designed &amp; Developed by <a href={b.credit_url || 'https://customesolution.com'} target="_blank" rel="noopener">{b.credit_text || 'CustomE Solution'}</a></span>}</div>
     </div>
   </footer>;
 }
