@@ -138,7 +138,7 @@ export function Multi({ value = [], onChange, options, size = 5 }) {
 export function Thumb({ src, size = 44, alt = '', style }) {
   const [open, setOpen] = useState(false);
   const box = { width: size, height: size, ...style };
-  if (!src) return <span className="thumb none" style={box} title="No product image"><img src="/img/mark-t.png" alt="JEWELSETU" style={{ width: '68%', height: '68%', objectFit: 'contain', opacity: 0.85 }} /></span>;
+  if (!src) return <span className="thumb none" style={box} title="No product image"><img src={import.meta.env.BASE_URL + 'img/mark-t.png'} alt="JEWELSETU" style={{ width: '68%', height: '68%', objectFit: 'contain', opacity: 0.85 }} /></span>;
   const u = fileUrl(src);
   return <>
     <img className="thumb" src={u} alt={alt} loading="lazy" style={box} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }} />

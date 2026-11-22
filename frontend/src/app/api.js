@@ -1,5 +1,6 @@
 // Thin client for the PHP JSON API (same origin, session cookie + CSRF header)
-const BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') + '/api/';
+// the ERP is built under /erp/ — the API lives one level up at /api/
+const BASE = (import.meta.env.BASE_URL || '/').replace(/erp\/?$/, '').replace(/\/$/, '') + '/api/';
 let csrf = '';
 export const setCsrf = (t) => { csrf = t || csrf; };
 export const apiUrl = (path, q) => BASE + path + (q ? '?' + new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString() : '');

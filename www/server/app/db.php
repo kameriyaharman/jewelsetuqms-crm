@@ -92,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 10) return;
+    if ($ver >= 11) return;
+    if ($ver === 10) { db_migrate_v11(); return; }
     if ($ver === 9) { db_migrate_v10(); return; }
     if ($ver === 8) { db_migrate_v9(); return; }
     if ($ver === 7) { db_migrate_v8(); return; }
@@ -195,6 +196,30 @@ function db_migrate_v10(): void {
     if (setting('att_late_after', '') === '') set_setting('att_late_after', '10:30');
     if (setting('att_remind_at', '') === '') set_setting('att_remind_at', '20:00');
     set_setting('schema_version', '10');
+    db_migrate_v11();
+}
+/** v11: public website CMS — blog articles, audit leads, lead magnets, PDF downloads, editable page content. */
+function db_migrate_v11(): void {
+    require_once __DIR__ . '/site.php';
+    site_tables(); site_seed();
+    set_setting('schema_version', '11');
+}
+function site_tables(): void {
+    $pk = is_sqlite() ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
+    $engine = is_sqlite() ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+    $T = 'VARCHAR(255)'; $TXT = is_sqlite() ? 'TEXT' : 'MEDIUMTEXT'; $DT = is_sqlite() ? 'TEXT' : 'DATETIME';
+    $tables = [
+        'site_content' => "k VARCHAR(60) PRIMARY KEY, v $TXT, updated_at $DT NULL",
+        'site_posts' => "id $pk, slug VARCHAR(190) NOT NULL UNIQUE, title $T NOT NULL, excerpt TEXT NULL, body $TXT NULL, cover $T NULL, category $T NULL, tags $T NULL,
+            author $T NULL, author_title $T NULL, status VARCHAR(20) DEFAULT 'DRAFT', featured INT DEFAULT 0, magnet_id INT NULL, meta_title $T NULL, meta_desc TEXT NULL,
+            read_min INT DEFAULT 1, views INT DEFAULT 0, published_at $DT NULL, created_at $DT NULL, updated_at $DT NULL",
+        'site_leads' => "id $pk, name $T NULL, company $T NULL, email $T NULL, phone VARCHAR(60) NULL, service VARCHAR(60) NULL, categories $T NULL, batch_qty VARCHAR(60) NULL,
+            hub VARCHAR(80) NULL, pref_date VARCHAR(20) NULL, message TEXT NULL, file_path $T NULL, file_name $T NULL, source VARCHAR(80) NULL, status VARCHAR(20) DEFAULT 'NEW',
+            notes TEXT NULL, ip VARCHAR(64) NULL, created_at $DT NULL, updated_at $DT NULL",
+        'site_magnets' => "id $pk, title $T NOT NULL, description TEXT NULL, file_path $T NULL, file_name $T NULL, active INT DEFAULT 1, created_at $DT NULL",
+        'site_downloads' => "id $pk, magnet_id INT NULL, post_id INT NULL, name $T NULL, company $T NULL, email $T NULL, ip VARCHAR(64) NULL, created_at $DT NULL",
+    ];
+    foreach ($tables as $name => $cols) db()->exec("CREATE TABLE IF NOT EXISTS $name ($cols)$engine");
 }
 function db_ready(): bool {
     try { db()->query('SELECT 1 FROM settings LIMIT 1'); return true; } catch (Throwable $e) { return false; }

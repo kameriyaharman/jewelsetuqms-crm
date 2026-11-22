@@ -1,6 +1,8 @@
-# JEWELSETU Q-TRACK — Apache config for Linux shared hosting (cPanel / Hostinger)
+# JEWELSETU — Apache config for Linux shared hosting (cPanel / Hostinger) and the Railway Docker image
+#   /       public website (index.php adds SEO tags to the React site)     /admin  website CMS
+#   /erp    Q-TRACK ERP (React single-page app in erp/)                     /api    PHP JSON API
 Options -Indexes
-DirectoryIndex index.html
+DirectoryIndex index.php index.html
 <IfModule mod_rewrite.c>
   RewriteEngine On
   # If installed in a sub-folder, set e.g.:  RewriteBase /qtrack/   (and build with VITE_BASE=/qtrack/)
@@ -9,10 +11,13 @@ DirectoryIndex index.html
   # JSON API
   RewriteRule ^api/index\.php$ - [L]
   RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
-  # React single-page app: everything else that is not a real file -> index.html
+  # Q-TRACK ERP: everything under /erp that is not a real file -> erp/index.html
   RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^ index.html [L]
+  RewriteRule ^erp(/.*)?$ erp/index.html [L]
+  # Website, /admin, sitemap.xml, robots.txt and old ERP links -> index.php
+  RewriteRule ^index\.php$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^ index.php [QSA,L]
 </IfModule>
 <IfModule mod_php.c>
   php_value upload_max_filesize 32M

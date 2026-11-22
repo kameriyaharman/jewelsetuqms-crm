@@ -170,7 +170,7 @@ api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
         foreach ($rows as &$r) $r['password'] = pw_dec($enc[$r['id']] ?? null); unset($r);
         if ($sel) $sel['password'] = pw_dec($enc[$sel['id']] ?? null);
     }
-    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES, 'show_pw' => is_role('super_admin'), 'login_url' => (isset($_SERVER['HTTP_HOST']) ? ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] : '') . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php')), '/') . '/login'];
+    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES, 'show_pw' => is_role('super_admin'), 'login_url' => (isset($_SERVER['HTTP_HOST']) ? ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] : '') . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php')), '/') . '/erp/login'];
 });
 api('POST', 'team/save', ['super_admin'], function () {
     $id = (int)in_('id'); $role = (string)in_('role');

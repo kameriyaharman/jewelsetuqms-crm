@@ -1,4 +1,15 @@
-# JEWELSETU Q-TRACK
+# JEWELSETU — website + Q-TRACK
+
+| URL | What |
+|---|---|
+| `/` | Public website (jewelsetuqms.in design) — Home, Services, Q-Track Portal, Knowledge Hub, About, Book an Audit, /verify |
+| `/admin` | Website CMS — dashboard, blog articles, audit leads, PDF downloads, lead magnets, all page content, settings (Super Admin / Back Office login) |
+| `/erp` | Q-TRACK ERP (below). Old links like `/login`, `/app`, `/dashboard` redirect to `/erp/...` |
+| `/api` | PHP JSON API shared by both |
+
+Website source: `frontend/site` (React) → `npm run build:site`. `www/index.php` serves it and adds per-page SEO / OpenGraph tags, `sitemap.xml`, `robots.txt`.
+Website data lives in the same MySQL database (`site_*` tables, created automatically).
+
 
 Multi-portal jewellery QC inspection, reporting & analytics — Internal portal (Super Admin, Back Office, QC Manager), Inspector mobile app (PWA, works offline), Client portal and Vendor portal.
 
@@ -12,12 +23,13 @@ Multi-portal jewellery QC inspection, reporting & analytics — Internal portal 
 
 ## Folder layout
 ```
-frontend/         React source  (npm install && npm run build  → writes into www/)
+frontend/         React source  (npm install && npm run build → builds the ERP into www/erp and the website into www/)
+  src/            Q-TRACK ERP          site/   public website + /admin
 www/              ← THIS is what goes on the server (upload to public_html)
-  index.html, assets/, img/, sw.js, manifest.webmanifest   built React app
+  index.php, index.html, assets/   website (built)      erp/   Q-TRACK ERP (built)
   api/index.php   JSON API entry (/api/...)
   server/         PHP code, config, lib, storage/, uploads/   (blocked from the web by .htaccess)
-  .htaccess       routes /api → PHP, everything else → React
+  .htaccess       routes /api → PHP, /erp → ERP app, everything else → index.php (website)
 ```
 
 ## Deploy on cPanel / Hostinger shared hosting
@@ -46,9 +58,9 @@ Local API for dev: `DB_DRIVER=sqlite php -S 127.0.0.1:8090 -t www dev-router.php
 ## Roles
 | Role | Lands on |
 |---|---|
-| Super Admin / Back Office / QC Manager | `/dashboard` |
-| QC Inspector | `/app` (mobile PWA — install via “Add to Home Screen”) |
-| Client user | `/client` |
-| Vendor user | `/vendor` |
+| Super Admin / Back Office / QC Manager | `/erp/dashboard` |
+| QC Inspector | `/erp/app` (mobile PWA — install via “Add to Home Screen”) |
+| Client user | `/erp/client` |
+| Vendor user | `/erp/vendor` |
 
 SKU **Hold for approval**: inspector pauses one SKU for client or vendor confirmation → they answer in *Approvals* → inspector is notified and resumes.

@@ -10,7 +10,7 @@ define('STORAGE_DIR', ROOT . '/storage');
 ini_set('display_errors', $CFG['debug'] ? '1' : '0');
 error_reporting(E_ALL);
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
+if (!defined('NO_SESSION') && session_status() !== PHP_SESSION_ACTIVE) {
     session_name('QTRACKSESS');
     session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
     session_start();

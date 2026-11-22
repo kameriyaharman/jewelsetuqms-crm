@@ -1,6 +1,6 @@
 /* Q-TRACK service worker: app shell cache + network-first cache for inspector API reads.
    Writes (inspection saves/photos) are queued in localStorage by the app and replayed when online. */
-const C = 'qtrack-v2';
+const C = 'qtrack-erp-v3';
 self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(C).then((c) => c.addAll([new URL('./', self.registration.scope).href]).catch(() => {}))); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((x) => x !== C).map((x) => caches.delete(x))))); self.clients.claim(); });
 self.addEventListener('fetch', (e) => {

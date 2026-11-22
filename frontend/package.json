@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/clean.mjs && vite build",
+    "dev:site": "vite --config vite.site.config.js",
+    "build": "npm run build:erp && npm run build:site",
+    "build:erp": "vite build",
+    "build:site": "node scripts/clean.mjs && vite build --config vite.site.config.js",
     "preview": "vite preview"
   },
   "dependencies": {
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.0"
+    "react-router-dom": "^7.9.0",
+    "lucide-react": "^0.460.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
