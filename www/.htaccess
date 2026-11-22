@@ -8,6 +8,8 @@ DirectoryIndex index.php index.html
   # If installed in a sub-folder, set e.g.:  RewriteBase /qtrack/   (and build with VITE_BASE=/qtrack/)
   # PHP code, uploads and database config are never served directly
   RewriteRule ^server(/|$) - [F,L]
+  # FTP deploy bookkeeping file (GitHub Action) is never served
+  RewriteRule ^\.ftp-deploy-sync-state\.json$ - [F,L]
   # JSON API
   RewriteRule ^api/index\.php$ - [L]
   RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
