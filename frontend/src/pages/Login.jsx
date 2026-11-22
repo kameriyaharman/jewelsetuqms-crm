@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { homeFor, useAuth } from '../app/auth';
 
-const DEMO = [['Super Admin', 'admin@jewelsetu.com', 'Admin@123'], ['Back Office', 'sonal@jewelsetu.com', 'Demo@123'], ['QC Manager', 'ravi@jewelsetu.com', 'Demo@123'],
-  ['Inspector (JS-010)', 'JS-010', 'Demo@123'], ['Client · KP', 'rajiv@kpjewels.com', 'Demo@123'], ['Vendor · Ashok', 'VND-ASHOK', 'Demo@123']];
 
 export default function Login() {
   const { login, me } = useAuth(); const nav = useNavigate();
@@ -35,8 +33,6 @@ export default function Login() {
       </form>
       <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>One login · 6 roles · routes to Internal, Client, Vendor portal or the Inspector app</p>
       <div className="roles">{['SUPER ADMIN', 'BACK OFFICE', 'QC MANAGER', 'INSPECTOR', 'CLIENT', 'VENDOR'].map((r) => <span key={r}>{r}</span>)}</div>
-      {me?.demo !== false && <div className="demo"><b>Demo logins</b> (click to fill)<br />
-        {DEMO.map(([l, a, b]) => <button key={l} type="button" onClick={() => { setId(a); setPw(b); }}>{l}</button>)}</div>}
     </div></div>
   </div>;
 }
