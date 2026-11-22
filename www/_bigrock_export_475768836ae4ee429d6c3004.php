@@ -1,11 +1,11 @@
 <?php
 // TEMPORARY one-time export for the Railway -> BigRock move. Delete after migration.
 // Only answers requests coming from the BigRock cPanel server.
-$allowed = ['103.50.160.254'];
+$allowed = ['103.21.59.132'];
 $xff = array_map('trim', explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
 $ip = $xff ? end($xff) : '';
 $real = $_SERVER['HTTP_X_REAL_IP'] ?? '';
-if (!array_intersect($allowed, array_filter([$ip, $real]))) { http_response_code(403); echo 'forbidden ' . $ip . ' | ' . $real; exit; }
+if (!array_intersect($allowed, array_filter([$real]))) { http_response_code(403); echo 'forbidden ' . $ip . ' | ' . $real; exit; }
 set_time_limit(600);
 $CFG = require __DIR__ . '/server/config.php';
 $what = $_GET['what'] ?? '';
