@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
-import { post } from '../app/api';
+import { apiUrl, get, post } from '../app/api';
 import { Badge, Loader, Sel, useAction, useApi } from '../app/ui';
 import { fdt, num } from '../app/util';
 
@@ -15,14 +15,15 @@ const PERM = [['QC requests', ['Full', 'Full', 'View', '—', 'View / raise*', '
   ['Analytics', ['Full', 'View', 'Full', '—', 'View (mapped vendors)', '—']], ['Masters & settings', ['Full', 'View', 'View', '—', '—', '—']], ['Team & logins', ['Full', 'View', 'View', '—', '—', '—']]];
 
 export default function Settings() {
-  const [sp, setSp] = useSearchParams(); const tab = sp.get('tab') || 'toggles'; const { refresh } = useAuth();
+  const [sp, setSp] = useSearchParams(); const tab = sp.get('tab') || 'toggles'; const { refresh, user } = useAuth();
+  const tabs = user?.role === 'super_admin' ? [...TABS, ['data', 'Backup & test data']] : TABS;
   const q = useApi('settings', { lv: sp.get('lv') }); const { run, busy } = useAction();
   const save = async (body) => { const r = await run(() => post('settings/save', body)); if (r) { q.reload(); refresh(); } return r; };
   return <Page title="Master Settings" sub={'Masters, standard defect list, checkpoints, AQL tables, report template, email, feature toggles and role permissions' + (q.data && !q.data.can_edit ? ' · view only' : '')}>
     <Loader q={q}>{(d) => { const ro = !d.can_edit; return <div className="grid" style={{ gridTemplateColumns: '220px minmax(0,1fr)' }}>
       <div className="card" style={{ padding: 10, alignSelf: 'start' }}><div className="stack">
         {[['clients', 'Client master'], ['vendors', 'Vendor master'], ['mapping', 'Client–vendor mapping']].map(([k, l]) => <Link key={k} className="btn ghost block" style={{ justifyContent: 'flex-start', border: 0 }} to={'/' + k}>{l} ↗</Link>)}
-        {TABS.map(([k, l]) => <button key={k} className={'btn block ' + (tab === k ? 'pri' : 'ghost')} style={{ justifyContent: 'flex-start', border: tab === k ? undefined : 0 }} onClick={() => setSp({ tab: k })}>{l}</button>)}
+        {tabs.map(([k, l]) => <button key={k} className={'btn block ' + (tab === k ? 'pri' : 'ghost')} style={{ justifyContent: 'flex-start', border: tab === k ? undefined : 0 }} onClick={() => setSp({ tab: k })}>{l}</button>)}
       </div></div>
       <div>{
         tab === 'toggles' ? <Toggles d={d} ro={ro} save={save} busy={busy} /> :
@@ -33,6 +34,7 @@ export default function Settings() {
         tab === 'aql' ? <Aql d={d} lv={sp.get('lv') || 'II'} setLv={(v) => setSp({ tab: 'aql', lv: v })} /> :
         tab === 'template' ? <Template d={d} ro={ro} save={save} busy={busy} /> :
         tab === 'email' ? <Email d={d} ro={ro} save={save} busy={busy} /> :
+        tab === 'data' && user?.role === 'super_admin' ? <DataTab /> :
         <div className="card"><h2 className="mb">Role permissions (6 roles)</h2><div className="tbl-wrap"><table className="t"><thead><tr><th>Module</th>{['Super Admin', 'Back Office', 'QC Manager', 'QC Inspector', 'Client User', 'Vendor User'].map((r) => <th key={r}>{r}</th>)}</tr></thead><tbody>
           {PERM.map(([m, v]) => <tr key={m}><td className="strong">{m}</td>{v.map((x, i) => <td key={i}>{x === '—' ? <span className="muted">—</span> : x}</td>)}</tr>)}</tbody></table></div>
           <p className="muted" style={{ fontSize: 12 }}>* when the matching feature toggle is ON. Every record carries client_id + vendor_id; client and vendor logins only ever see their own rows.</p></div>
@@ -153,4 +155,43 @@ function Email({ d, ro, save, busy }) {
     <h2 className="mb mt">Email history</h2>
     <table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>
       {d.emails.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{String(e.subject).slice(0, 60)}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table></div>;
+}
+
+const LABEL = { qc_jobs: 'QC requests / jobs', qc_items: 'SKUs / inspections / reports', item_defects: 'Defect entries', item_photos: 'Inspection photos', attachments: 'Attachments (PO / spec files)',
+  checkins: 'Attendance check-ins', leaves: 'Inspector leaves', manuals: 'QC manuals', manual_acks: 'Manual acknowledgements', notifications: 'Notifications', email_log: 'Email log', audit_log: 'Audit log' };
+const KEEP = { users: 'Logins / employee IDs', clients: 'Clients', vendors: 'Vendors', client_vendor: 'Client–vendor mapping', site_posts: 'Website articles', site_leads: 'Website audit leads' };
+function DataTab() {
+  const [d, setD] = useState(null); const [txt, setTxt] = useState(''); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(null);
+  const load = () => get('sys/data-counts').then(setD).catch((e) => setMsg({ err: e.message }));
+  useEffect(() => { load(); }, []);
+  const total = d ? Object.values(d.clear).reduce((a, b) => a + b, 0) : 0;
+  const clear = async () => {
+    if (!confirm('Delete ALL ERP test data permanently? A full backup is saved on the server first.')) return;
+    setBusy(true); setMsg(null);
+    try { const r = await post('sys/clear-test-data', { confirm: txt }); setMsg({ ok: r.message }); setTxt(''); load(); } catch (e) { setMsg({ err: e.message }); }
+    setBusy(false);
+  };
+  return <>
+    <div className="card"><div className="card-h"><h2>Full backup</h2></div>
+      <p className="muted" style={{ marginTop: 0 }}>Downloads the whole database and every uploaded photo / PDF as one ZIP. Keep it safe — it contains all client data and logins.</p>
+      <a className="btn pri" href={apiUrl('sys/backup')}>Download backup (.zip)</a>
+      {d?.backups?.length > 0 && <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Backups saved on the server before clearing: {d.backups.map((b) => b.name + ' (' + (b.size / 1048576).toFixed(1) + ' MB)').join(', ')}</p>}
+    </div>
+    <div className="card" style={{ borderColor: '#e8b4b0' }}><div className="card-h"><h2>Clear ERP test data</h2><span className="pill">Super Admin only</span></div>
+      <p style={{ marginTop: 0 }}>Removes everything entered while testing, so the ERP starts clean. A full backup is saved on the server first. Request, job and report numbering starts again.</p>
+      {!d ? <p className="muted">Loading…</p> : <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+        <div><b style={{ color: '#b42318' }}>Will be deleted ({num(total)} records)</b><table className="t" style={{ marginTop: 6 }}><tbody>
+          {Object.entries(d.clear).map(([k, v]) => <tr key={k}><td>{LABEL[k] || k}</td><td style={{ textAlign: 'right' }} className="strong">{num(v)}</td></tr>)}
+          <tr><td>Inspection photos, reports, imports &amp; manual files</td><td style={{ textAlign: 'right' }}>all</td></tr></tbody></table></div>
+        <div><b style={{ color: '#1f8a5b' }}>Kept</b><table className="t" style={{ marginTop: 6 }}><tbody>
+          {Object.entries(d.keep).map(([k, v]) => <tr key={k}><td>{KEEP[k] || k}</td><td style={{ textAlign: 'right' }} className="strong">{num(v)}</td></tr>)}
+          <tr><td>Masters, defect list, checkpoints, tests, settings, email</td><td style={{ textAlign: 'right' }}>all</td></tr>
+          <tr><td>Profile photos, website content &amp; files</td><td style={{ textAlign: 'right' }}>all</td></tr></tbody></table></div>
+      </div>}
+      <div className="f" style={{ maxWidth: 360, marginTop: 16 }}><label>Type <b>DELETE</b> to confirm</label><input value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="DELETE" /></div>
+      <button className="btn" style={{ background: '#b42318', color: '#fff', borderColor: '#b42318' }} disabled={busy || txt !== 'DELETE' || !total} onClick={clear}>{busy ? 'Saving backup & clearing…' : 'Clear test data'}</button>
+      {msg?.ok && <div className="flash f-ok" style={{ marginTop: 12 }}>{msg.ok}</div>}
+      {msg?.err && <div className="flash f-err" style={{ marginTop: 12 }}>{msg.err}</div>}
+    </div>
+  </>;
 }
