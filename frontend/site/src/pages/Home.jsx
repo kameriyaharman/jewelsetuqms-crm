@@ -4,6 +4,7 @@ import { CalendarPlus, Check, CheckCircle2, FileText, MapPin, ScanLine, Trending
 import { get } from '../api';
 import { useSite, T } from '../site';
 import { Diamond, Icon } from '../icons';
+import { CountUp } from '../motion';
 import { ArrowLink, CtaBand, PostCard } from '../components';
 
 export function HeroArt({ badges = [] }) {
@@ -12,7 +13,7 @@ export function HeroArt({ badges = [] }) {
   return <div className="hero-art" aria-hidden="true">
     <svg className="rings" viewBox="0 0 420 420" fill="none">
       <circle cx="210" cy="210" r="205" stroke="#e8d6a8" strokeWidth="1" />
-      <circle cx="210" cy="210" r="160" stroke="#e8d6a8" strokeDasharray="3 6" />
+      <circle className="spin" cx="210" cy="210" r="160" stroke="#e8d6a8" strokeDasharray="3 6" />
       <circle cx="210" cy="210" r="118" stroke="#efe1bb" />
       <path d="M5 210h410M210 5v410" stroke="#f1e6c8" strokeDasharray="2 8" />
     </svg>
@@ -30,9 +31,9 @@ export default function Home() {
   return <>
     <section className="hero">
       <div className="wrap">
-        <div className="rv">
+        <div>
           <span className="eyebrow">{H.eyebrow}</span>
-          <T as="h1" text={H.title} />
+          <T as="h1" text={H.title} anim />
           <p className="lead">{H.subtitle}</p>
           <div className="ctas">
             <button className="btn btn-gold btn-lg" onClick={() => openBook()}><CalendarPlus />{H.cta_primary}</button>
@@ -43,7 +44,7 @@ export default function Home() {
         <HeroArt badges={H.badges} />
       </div>
       <div className="wrap plain"><div className="stats">
-        {H.stats.map((s, i) => <div key={i}><div className={'v' + (/^\d/.test(s.value) ? '' : ' txt')}>{s.value}{s.suffix && <sup>{s.suffix}</sup>}</div><div className="l">{s.label}</div></div>)}
+        {H.stats.map((s, i) => <div key={i}><div className={'v' + (/^\d/.test(s.value) ? '' : ' txt')}><CountUp value={s.value} />{s.suffix && <sup>{s.suffix}</sup>}</div><div className="l">{s.label}</div></div>)}
       </div></div>
       <div className="hero-pad" />
     </section>

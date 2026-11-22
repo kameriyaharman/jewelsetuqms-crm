@@ -18,10 +18,12 @@ export function SiteProvider({ children }) {
 export const useSite = () => useContext(Ctx);
 
 /** Title text with *gold italic* parts */
-export function T({ text = '', as: As = 'span', className, br }) {
+export function T({ text = '', as: As = 'span', className, br, anim }) {
   const parts = String(text).split(/(\*[^*]+\*)/g).filter(Boolean);
+  let w = 0; // word index for the staggered entrance animation
+  const words = (s) => (anim ? s.split(/(\s+)/).map((x, j) => (/^\s+$/.test(x) || !x ? x : <span key={j} className="hw" style={{ '--i': w++ }}>{x}</span>)) : s);
   return <As className={className}>{parts.map((p, i) => p.startsWith('*') && p.endsWith('*')
-    ? <em key={i} className="g">{br && i > 0 ? <br /> : null}{p.slice(1, -1)}</em> : <span key={i}>{p}</span>)}</As>;
+    ? <em key={i} className="g">{br && i > 0 ? <br /> : null}{words(p.slice(1, -1))}</em> : <span key={i}>{words(p)}</span>)}</As>;
 }
 export const plain = (s) => String(s || '').replace(/\*/g, '');
 export const media = (p) => !p ? '' : /^(https?:)?\/\//.test(p) || p.startsWith('/') ? p : (import.meta.env.BASE_URL || '/') + 'api/site/pub/media?p=' + encodeURIComponent(p);

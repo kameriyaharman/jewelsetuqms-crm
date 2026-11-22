@@ -14,11 +14,11 @@ export function Icon({ name, ...p }) { const I = ICONS[name] || Sparkles; return
 
 /** Line-art brilliant-cut diamond (logo mark + hero art) */
 export function Diamond({ className, stroke = '#c9a24a', w = 1.4 }) {
-  return <svg className={className} viewBox="0 0 160 120" fill="none" stroke={stroke} strokeWidth={w} strokeLinejoin="round">
-    <path d="M4 36 32 6h96l28 30-76 80z" /><path d="M4 36h152" />
-    <path d="M32 6l18 30 30-30 30 30 18-30" /><path d="M50 36l30 80 30-80" />
-    <path d="M32 6 4 36M128 6l28 30M50 36 80 6M110 36 80 6" opacity=".6" />
-    <path d="M4 36 80 116M156 36 80 116M50 36 80 116 110 36" opacity=".55" />
+  return <svg className={'dia-svg ' + (className || '')} viewBox="0 0 160 120" fill="none" stroke={stroke} strokeWidth={w} strokeLinejoin="round">
+    <path pathLength="1" d="M4 36 32 6h96l28 30-76 80z" /><path pathLength="1" d="M4 36h152" />
+    <path pathLength="1" d="M32 6l18 30 30-30 30 30 18-30" /><path pathLength="1" d="M50 36l30 80 30-80" />
+    <path pathLength="1" d="M32 6 4 36M128 6l28 30M50 36 80 6M110 36 80 6" opacity=".6" />
+    <path pathLength="1" d="M4 36 80 116M156 36 80 116M50 36 80 116 110 36" opacity=".55" />
   </svg>;
 }
 export function Logo({ C, light }) {

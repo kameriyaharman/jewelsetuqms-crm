@@ -3,6 +3,7 @@ import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useSite } from './site';
 import { Header, Footer, WhatsAppFab, Spinner } from './components';
 import { BookModal, ReportModal } from './modals';
+import { Cursor, useMotion } from './motion';
 import Home from './pages/Home';
 import Services from './pages/Services';
 import QTrack from './pages/QTrack';
@@ -18,10 +19,12 @@ function Public() {
   const loc = useLocation();
   useEffect(() => { if (new URLSearchParams(loc.search).get('preview') === 'qc-report') setReport(true); }, [loc.search]); // eslint-disable-line
   useEffect(() => { if (!loc.hash) window.scrollTo(0, 0); }, [loc.pathname]);
+  useMotion(loc.pathname);
   if (!C) return <Spinner />;
   return <>
+    <Cursor />
     <Header />
-    <main><Outlet /></main>
+    <main key={loc.pathname} className="page-in"><Outlet /></main>
     <Footer />
     <WhatsAppFab />
     {book && <BookModal />}
