@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, InspSt, Loader, Modal, Sel, useAction, useApi, useForm, Thumb } from '../app/ui';
+import { Badge, Empty, Icon, InspSt, Loader, Modal, Sel, useAction, useApi, useForm, Thumb, Paged } from '../app/ui';
 import { fdate, num, today } from '../app/util';
 
 const TABS = [['ALL', 'All'], ['UNASSIGNED', 'Unassigned'], ['ASSIGNED', 'Assigned'], ['IN_PROGRESS', 'In progress'], ['REVIEW', 'Review'], ['OPEN', 'Open / partial QC'], ['CLOSED', 'Complete / closed']];
@@ -48,7 +48,7 @@ export default function Jobs() {
           {isSA && <button className="btn" style={{ background: 'var(--ruby)', color: '#fff', borderColor: 'var(--ruby)' }} disabled={busy} onClick={() => setDel(d.rows.filter((j) => pick.has(j.id)))}>🗑 DELETE SELECTED</button>}
           <button className="btn sm" onClick={() => setPick(new Set())}>Clear</button></div>}
         {del && <DeleteJobs jobs={del} onClose={() => setDel(null)} onDone={() => { setDel(null); setPick(new Set()); q.reload(); refresh(); }} />}
-        {!d.rows.length ? <Empty>No jobs.</Empty> : view === 'cards' ? <div className="cards">{d.rows.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
+        {!d.rows.length ? <Empty>No jobs.</Empty> : <Paged rows={d.rows} per={25} label="jobs" resetKey={f + view}>{(pr) => (view === 'cards' ? <div className="cards">{pr.map((j) => <div key={j.id} className={'pcard' + (sel === j.id ? ' sel' : '')}>
             <Link to={'/request/' + j.id} className="pimg"><Thumb src={j.img} size={150} alt={j.job_no} /></Link>
             <div className="pbody"><Link className="strong mono" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link><b>{j.vendor_name}</b><small className="muted">{j.client_code} · PO {j.po_no} · {j.skus} SKU</small>
               <small>{fdate(j.scheduled_date, 'd M Y')} {j.time_slot}</small><small>{j.insp_code ? `${j.insp_code} · ${j.insp_name}` : 'Not assigned'}</small></div>
@@ -56,7 +56,7 @@ export default function Jobs() {
               {canAssign && OPEN.includes(j.status) && <button className="btn sm" onClick={() => setSp({ f, id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button>}</div></div>)}</div>
           : <div className="tbl-wrap"><table className="t"><thead><tr>{canAssign && <th style={{ width: 28 }}><input type="checkbox" title="Select all" checked={d.rows.filter((j) => canPick(j)).length > 0 && d.rows.filter((j) => canPick(j)).every((j) => pick.has(j.id))} onChange={(e) => setPick(e.target.checked ? new Set(d.rows.filter((j) => canPick(j)).map((j) => j.id)) : new Set())} /></th>}
             <th>QC job no.</th><th>Client</th><th>Vendor</th><th>PO</th><th>SKU</th>{f === 'OPEN' ? <><th className="num">Order</th><th className="num">Accepted</th><th className="num">Balance</th></> : <th>QC date</th>}<th>Inspector</th><th>Status</th></tr></thead><tbody>
-          {d.rows.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
+          {pr.map((j) => <tr key={j.id} className={sel === j.id ? 'sel' : ''}>
             {canAssign && <td>{canPick(j) && <input type="checkbox" checked={pick.has(j.id)} onChange={() => toggle(j.id)} />}</td>}
             <td><div className="skucell"><Thumb src={j.img} size={40} alt={j.job_no} /><Link className="strong mono" to={'/request/' + j.id}>{j.job_no}</Link></div></td><td>{j.client_code}</td><td>{j.vendor_name}</td><td className="mono"><a href="#" onClick={(e) => { e.preventDefault(); setSearch(j.po_no); go({ q: j.po_no, id: '' }); }}>{j.po_no}</a></td><td>{+j.skus === 1 ? <span className="mono">{j.sku1}</span> : `${j.skus} SKUs`}</td>
             {f === 'OPEN' ? <><td className="num">{num(j.bal?.order)}</td><td className="num ok-t"><b>{num(j.bal?.accepted)}</b></td><td className="num bad-t"><b>{num(j.bal?.pending)}</b></td></> : <>
@@ -64,7 +64,7 @@ export default function Jobs() {
             <td>{!j.inspector_id && ['SCHEDULED', 'REQUESTED'].includes(j.status) ? <Badge s="UNASSIGNED" /> : <Badge s={j.status} />}
               {canAssign && [...OPEN, 'SCHEDULED'].includes(j.status) && <> <button className="btn sm" onClick={() => go({ id: j.id })}>{j.inspector_id ? 'Reassign' : 'Assign'}</button></>}
               {j.status === 'PARTIAL' && j.bal?.lot && <> <button className="btn sm gold" onClick={() => setLot({ job_id: j.id, job_no: j.job_no, ...j.bal.lot, ready: j.bal.lot.pending, date: today() })}>+ Add next QC lot</button></>}</td></tr>)}
-        </tbody></table></div>}
+        </tbody></table></div>)}</Paged>}
         <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>Lifecycle: Requested → Scheduled → Assigned → In progress → Submitted → Under review → Approved → PDF generated → Emailed → Closed</p>
       </div>
       {canAssign && selRow && OPEN.includes(selRow.status) && <AssignPanel key={selRow.id} id={selRow.id} onDone={() => { q.reload(); refresh(); }} />}

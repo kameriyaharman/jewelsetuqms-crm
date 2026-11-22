@@ -5,6 +5,7 @@ import { get, post } from '../api';
 import { useSite, T, media } from '../site';
 import { Diamond } from '../icons';
 import { PostCard, Spinner } from '../components';
+import { usePaged, Pager } from '../admin/pager';
 
 export function MagnetSide({ magnet }) {
   const [open, setOpen] = useState(false);
@@ -46,13 +47,14 @@ export default function Blog() {
   const [q, setQ] = useState(qq);
   const [posts, setPosts] = useState(null);
   const ref = useRef(null);
-  useEffect(() => { setPosts(null); get('site/pub/posts', { cat, tag, q: qq, limit: 60 }).then((r) => setPosts(r.posts)).catch(() => setPosts([])); }, [cat, tag, qq]);
+  useEffect(() => { setPosts(null); get('site/pub/posts', { cat, tag, q: qq, limit: 500 }).then((r) => setPosts(r.posts)).catch(() => setPosts([])); }, [cat, tag, qq]);
   useEffect(() => { const k = (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); ref.current?.focus(); } }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
   useEffect(() => { const t = setTimeout(() => { if (q !== qq) { const n = new URLSearchParams(sp); q ? n.set('q', q) : n.delete('q'); setSp(n, { replace: true }); } }, 350); return () => clearTimeout(t); }, [q]); // eslint-disable-line
   const setParam = (k, v) => { const n = new URLSearchParams(); if (v) n.set(k, v); setQ(''); setSp(n); };
   const filtered = cat || tag || qq;
   const feat = !filtered && posts ? (posts.find((p) => p.featured) || posts[0]) : null;
   const rest = posts ? posts.filter((p) => p !== feat) : [];
+  const pg = usePaged(rest, 12, cat + '|' + tag + '|' + qq);
   const magnet = (site?.magnets || [])[0];
   return <>
     <section className="phero">
@@ -71,13 +73,14 @@ export default function Blog() {
       <div className="wrap blog-grid">
         <div>
           {!posts ? <Spinner /> : !posts.length ? <div className="empty">No articles found{qq ? ` for “${qq}”` : ''}.</div> : <>
-            {feat && <Link to={'/blog/' + feat.slug} className="feat">
+            {feat && pg.page === 1 && <Link to={'/blog/' + feat.slug} className="feat">
               <div className="cv">{feat.cover ? <img className="cover" src={media(feat.cover)} alt="" /> : <Diamond className="dia" stroke="#c9a24a" w={1.3} />}<span className="star"><Star />Featured</span></div>
               <div className="bd"><span className="pill">{feat.category}</span><h2 className="serif">{feat.title}</h2><p>{feat.excerpt}</p>
                 <div className="meta-row"><span><User />{feat.author}</span><span><Clock />{feat.read_min} min read</span></div></div>
             </Link>}
             {filtered && <p style={{ margin: '0 0 16px', color: 'var(--muted)', fontSize: 14 }}>{posts.length} article{posts.length > 1 ? 's' : ''}{cat ? ' in ' + cat : ''}{tag ? ' tagged #' + tag : ''}{qq ? ` matching “${qq}”` : ''}</p>}
-            {rest.length > 0 && <div className="posts small" style={{ marginTop: feat ? 20 : 0 }}>{rest.map((p, i) => <PostCard key={p.id} p={p} i={i} small />)}</div>}
+            {rest.length > 0 && <div className="posts small" style={{ marginTop: feat ? 20 : 0 }}>{pg.rows.map((p, i) => <PostCard key={p.id} p={p} i={i} small />)}</div>}
+            <Pager pg={pg} simple onPage={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
           </>}
         </div>
         <aside>

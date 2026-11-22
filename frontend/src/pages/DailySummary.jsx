@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { post } from '../app/api';
-import { Loader, Modal, useAction, useApi, useToast } from '../app/ui';
+import { Loader, Modal, useAction, useApi, useToast, Paged } from '../app/ui';
 import { fdate, num, today } from '../app/util';
 
 /** 📤 Send Daily Summary Now — preview per vendor / client, copy WhatsApp text, send all or one. */
@@ -45,7 +45,7 @@ export function TodaySummaryCard() {
           {m.rows.map((g, i) => <tr key={i}><td>{m.type === 'Client' ? g.vendor : g.client}</td><td className="num">{g.designs}</td><td className="num">{num(g.pcs)}</td><td className="num">{num(g.ok)}</td><td className="num">{num(g.rej)}</td><td className="num">{num(g.pending)}</td></tr>)}</tbody></table></>}
       {D.days?.length > 0 && <div className="mt"><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ fontSize: 12.5 }}>QC days (last 60 days)</b><a href="#" style={{ fontSize: 12 }} onClick={(e) => { e.preventDefault(); setHist(!hist); }}>{hist ? 'Hide table' : 'Show date-wise table'}</a></div>
         <div className="pills" style={{ marginTop: 6 }}>{D.days.slice(0, 14).map((x) => <button key={x.d} className={x.d === date ? 'on' : ''} onClick={() => setDate(x.d)}>{fdate(x.d, 'd M')} · {x.designs}</button>)}</div>
-        {hist && <table className="t"><thead><tr><th>Date</th><th className="num">Designs</th><th className="num">Checked pcs</th><th className="num">OK</th><th className="num">Rej</th><th className="num">Rej %</th><th></th></tr></thead><tbody>
-          {D.days.map((x) => <tr key={x.d} className={x.d === date ? 'sel' : ''}><td>{fdate(x.d, 'd M Y, D')}</td><td className="num">{x.designs}</td><td className="num">{num(x.pcs)}</td><td className="num">{num(x.ok)}</td><td className="num">{num(x.rej)}</td><td className="num">{x.rate.toFixed(1)}%</td><td><a href="#" onClick={(e) => { e.preventDefault(); setDate(x.d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>View</a></td></tr>)}</tbody></table>}</div>}
+        {hist && <Paged rows={D.days} per={10} label="days">{(pr) => <table className="t"><thead><tr><th>Date</th><th className="num">Designs</th><th className="num">Checked pcs</th><th className="num">OK</th><th className="num">Rej</th><th className="num">Rej %</th><th></th></tr></thead><tbody>
+          {pr.map((x) => <tr key={x.d} className={x.d === date ? 'sel' : ''}><td>{fdate(x.d, 'd M Y, D')}</td><td className="num">{x.designs}</td><td className="num">{num(x.pcs)}</td><td className="num">{num(x.ok)}</td><td className="num">{num(x.rej)}</td><td className="num">{x.rate.toFixed(1)}%</td><td><a href="#" onClick={(e) => { e.preventDefault(); setDate(x.d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>View</a></td></tr>)}</tbody></table>}</Paged>}</div>}
     </>}</div>;
 }

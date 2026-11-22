@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl } from '../app/api';
-import { Badge, Empty, Kpi, Loader, Result, Sel, useApi, Thumb } from '../app/ui';
+import { Badge, Empty, Kpi, Loader, Result, Sel, useApi, Thumb, Paged } from '../app/ui';
 import { fdate, fdt, num, pct, today } from '../app/util';
 
 export default function Reports() {
@@ -41,14 +41,14 @@ export default function Reports() {
           <div><label>From</label><input type="date" value={f.from || d.filters.from} onChange={set('from')} /></div><div><label>To</label><input type="date" value={f.to || d.filters.to} onChange={set('to')} /></div>
           <button className="btn pri">Search</button>
         </form>
-        {!d.rows.length ? <Empty>No approved reports for these filters.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr>{mode === 'B' && <th style={{ width: 28 }}><input type="checkbox" title="Select all on this page" checked={d.rows.length > 0 && d.rows.every((x) => pick.has(x.id))} onChange={(e) => setPick(e.target.checked ? new Set([...pick, ...d.rows.map((x) => x.id)]) : new Set())} /></th>}<th>Report no.</th><th>Date</th>{r !== 'client' && <th>Client</th>}{r !== 'vendor' && <th>Vendor</th>}<th>PO</th><th>SKU</th>{internal && <th>Inspector</th>}<th>Result</th>{internal && <th>Email</th>}<th>Download</th></tr></thead><tbody>
+        {!d.rows.length ? <Empty>No approved reports for these filters.</Empty> : <Paged rows={d.rows} per={25} label="reports">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr>{mode === 'B' && <th style={{ width: 28 }}><input type="checkbox" title="Select all on this page" checked={d.rows.length > 0 && d.rows.every((x) => pick.has(x.id))} onChange={(e) => setPick(e.target.checked ? new Set([...pick, ...pr.map((x) => x.id)]) : new Set())} /></th>}<th>Report no.</th><th>Date</th>{r !== 'client' && <th>Client</th>}{r !== 'vendor' && <th>Vendor</th>}<th>PO</th><th>SKU</th>{internal && <th>Inspector</th>}<th>Result</th>{internal && <th>Email</th>}<th>Download</th></tr></thead><tbody>
           {d.rows.map((x) => <tr key={x.id} className={pick.has(x.id) ? 'sel' : ''}>{mode === 'B' && <td><input type="checkbox" checked={pick.has(x.id)} onChange={() => toggle(x.id)} /></td>}<td><Link className="mono strong" to={'/report/' + x.id}>{x.report_no}</Link>{+x.rev ? <> <span className="badge b-conditional">REV {String(x.rev).padStart(2, '0')}</span></> : null}</td>
             <td>{fdate(x.approved_at, 'd M')}</td>{r !== 'client' && <td>{x.client_code}</td>}{r !== 'vendor' && <td>{x.vendor_name}</td>}<td className="mono">{x.po_no}</td><td><div className="skucell"><Thumb src={x.img} size={40} alt={x.sku} /><span className="mono">{x.sku}</span></div></td>{internal && <td>{x.insp_code}</td>}
             <td><Result r={x.final_result} />{x.concession_status && <><br /><small>concession {x.concession_status.toLowerCase()}</small></>}</td>
             {internal && <td>{+x.emails ? <Badge s="SENT" /> : <span className="muted">—</span>}</td>}
             <td><span className="actions" style={{ flexWrap: 'nowrap' }}><a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ item: x.id })}>Design PDF</a>
               {['EMAILED', 'CLOSED', 'APPROVED'].includes(x.jstatus) && <a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ job: x.jid })}>PO PDF{+x.nsku > 1 ? ` (${x.nsku})` : ''}</a>}</span></td></tr>)}
-        </tbody></table></div>}
+        </tbody></table></div>}</Paged>}
       </div>
       <div className={'grid mt ' + (d.revisions.length ? 'g-73' : '')}>
         {!!d.revisions.length && <div className="card" style={{ margin: 0 }}><h2 className="mb">Revision &amp; audit (latest)</h2><table className="t"><thead><tr><th>Report</th><th>Rev</th><th>Changed by</th><th>Field</th><th>Old → New</th><th>Time</th></tr></thead><tbody>

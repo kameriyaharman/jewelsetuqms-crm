@@ -36,7 +36,7 @@ api('POST', 'auth/logout', null, function () { $_SESSION = []; session_destroy()
 
 api('GET', 'notifications', R_ALL, function () {
     $uid = user()['id'];
-    $list = all('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100', [$uid]);
+    $list = all('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 500', [$uid]);
     q('UPDATE notifications SET is_read=1 WHERE user_id=?', [$uid]);
     $ret = [];
     if (role() === 'inspector') $ret = all("SELECT i.id, i.sku, i.return_reason, i.return_sections, j.job_no FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status='RETURNED'", [$uid, $uid]);

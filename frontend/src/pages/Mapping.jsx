@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { post } from '../app/api';
-import { Badge, Loader, useAction, useApi } from '../app/ui';
+import { Badge, Loader, useAction, useApi, Paged } from '../app/ui';
 import { fdt } from '../app/util';
 
 export default function Mapping() {
@@ -36,9 +36,9 @@ export default function Mapping() {
           </div></>}
       </div>
       <div className="card"><div className="card-h"><h2>Portal logins</h2><Link to="/team?f=portal&new=1">Create login</Link></div>
-        <div className="tbl-wrap"><table className="t"><thead><tr><th>User</th><th>Portal</th><th>Linked to</th><th>Last login</th><th>Status</th></tr></thead><tbody>
-          {d.logins.map((u) => <tr key={u.id}><td className="mono">{u.role === 'vendor' ? u.emp_code : u.email}</td><td>{u.role === 'vendor' ? 'Vendor' : 'Client'}</td><td>{u.ccode || u.vname}</td>
-            <td>{u.last_login ? fdt(u.last_login) : <span className="muted">never</span>}</td><td><Badge s={u.status} /></td></tr>)}</tbody></table></div>
+        <Paged rows={d.logins} per={25} label="logins">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>User</th><th>Portal</th><th>Linked to</th><th>Last login</th><th>Status</th></tr></thead><tbody>
+          {pr.map((u) => <tr key={u.id}><td className="mono">{u.role === 'vendor' ? u.emp_code : u.email}</td><td>{u.role === 'vendor' ? 'Vendor' : 'Client'}</td><td>{u.ccode || u.vname}</td>
+            <td>{u.last_login ? fdt(u.last_login) : <span className="muted">never</span>}</td><td><Badge s={u.status} /></td></tr>)}</tbody></table></div>}</Paged>
       </div>
     </div>}</Loader>
   </Page>;

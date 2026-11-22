@@ -3,6 +3,7 @@ import { Calendar, FileDown, FileText, Mail, MessageCircle, Phone, Search, Trash
 import { apiUrl, get, post } from '../api';
 import { fmtDate, telLink } from '../site';
 import { useAdmin } from './Admin';
+import { usePaged, Pager } from './pager';
 
 export const ago = (d) => {
   if (!d) return ''; const t = new Date(String(d).replace(' ', 'T')); const s = (Date.now() - t.getTime()) / 1000;
@@ -55,6 +56,7 @@ export function LeadsTable({ month, limit, title = 'Audit requests' }) {
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load]); // eslint-disable-line
   const rows = d ? (limit ? d.leads.slice(0, limit) : d.leads) : [];
   const total = d ? Object.values(d.counts).reduce((a, b) => a + b, 0) : 0;
+  const pg = usePaged(rows, 25, st + '|' + q + '|' + month);
   return <div className="card">
     <div className="card-h"><h3>{title}</h3>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -66,11 +68,12 @@ export function LeadsTable({ month, limit, title = 'Audit requests' }) {
       <thead><tr><th>Client / Company</th><th>Service</th><th>Product</th><th>Batch</th><th>Hub</th><th>File</th><th>Status</th><th>Received</th></tr></thead>
       <tbody>{!d ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)' }}>Loading…</td></tr>
         : !rows.length ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30, cursor: 'default' }}>No audit requests yet. Requests from the “Book an Audit” form appear here.</td></tr>
-        : rows.map((l) => <tr key={l.id} onClick={() => setSel(l)}>
+        : pg.rows.map((l) => <tr key={l.id} onClick={() => setSel(l)}>
           <td><b>{l.name}</b><small>{l.company}</small></td><td>{l.service || '—'}</td><td>{l.categories || '—'}</td><td>{l.batch_qty || '—'}</td><td>{l.hub || '—'}</td>
           <td className="fi">{l.file_url ? <a href={l.file_url} onClick={(e) => e.stopPropagation()} title={l.file_name}><FileText /></a> : '—'}</td>
           <td><span className={'st st-' + l.status}>{STAT[l.status] || l.status}</span></td><td style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ago(l.created_at)}</td></tr>)}</tbody>
     </table></div>
+    <Pager pg={pg} label="requests" />
     {sel && <LeadDrawer lead={sel} onClose={() => setSel(null)} onChange={(n) => { setSel(n); load(); }} />}
   </div>;
 }

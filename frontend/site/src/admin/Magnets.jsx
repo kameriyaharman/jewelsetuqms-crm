@@ -3,6 +3,7 @@ import { FileDown, FileText, Plus, Search, Trash2, X } from 'lucide-react';
 import { apiUrl, get, post, upload } from '../api';
 import { fmtDate } from '../site';
 import { useAdmin } from './Admin';
+import { usePaged, Pager } from './pager';
 
 export function Magnets() {
   const { toast, me } = useAdmin();
@@ -47,6 +48,7 @@ export function Downloads() {
   const [rows, setRows] = useState(null); const [q, setQ] = useState('');
   useEffect(() => { get('site/admin/downloads').then((r) => setRows(r.rows)).catch(() => setRows([])); }, []);
   const list = (rows || []).filter((r) => !q || [r.name, r.company, r.email].join(' ').toLowerCase().includes(q.toLowerCase()));
+  const pg = usePaged(list, 25, q);
   return <>
     <div className="atop"><div><h1 className="serif">PDF downloads</h1><p>People who downloaded a lead magnet — warm leads for follow-up.</p></div>
       <div className="acts"><label className="sbox"><Search /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" /></label>
@@ -54,8 +56,8 @@ export function Downloads() {
     <div className="card"><div className="tbl-wrap"><table className="tbl">
       <thead><tr><th>Name</th><th>Email</th><th>Lead magnet</th><th>From article</th><th>Date</th></tr></thead>
       <tbody>{!rows ? <tr><td colSpan={5}>Loading…</td></tr> : !list.length ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>No downloads yet.</td></tr>
-        : list.map((r) => <tr key={r.id} style={{ cursor: 'default' }}><td><b>{r.name}</b><small>{r.company}</small></td><td><a href={'mailto:' + r.email} style={{ color: 'var(--gold-d)' }}>{r.email}</a></td>
+        : pg.rows.map((r) => <tr key={r.id} style={{ cursor: 'default' }}><td><b>{r.name}</b><small>{r.company}</small></td><td><a href={'mailto:' + r.email} style={{ color: 'var(--gold-d)' }}>{r.email}</a></td>
           <td>{r.magnet || '—'}</td><td style={{ maxWidth: 260 }}>{r.post || '—'}</td><td style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}</td></tr>)}</tbody>
-    </table></div></div>
+    </table></div><Pager pg={pg} label="downloads" /></div>
   </>;
 }

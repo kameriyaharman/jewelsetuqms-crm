@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Page } from '../app/Layout';
 import { fileUrl, post, upload } from '../app/api';
-import { Empty, Icon, Loader, Modal, Sel, useAction, useApi, useToast } from '../app/ui';
+import { Empty, Icon, Loader, Modal, Sel, useAction, useApi, useToast, usePaged, Pager } from '../app/ui';
 import { fdate } from '../app/util';
 
 const ICON = { pdf: '📕', xlsx: '📗', xls: '📗', docx: '📘', doc: '📘', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', webp: '🖼️' };
@@ -23,9 +23,9 @@ export function ManualViewer({ m, onClose }) {
 
 /** Row list of manuals with NEW / UPDATED badge, version, view / download, update and history. */
 export function ManualList({ rows, onEdit, onDelete, compact }) {
-  const [v, setV] = useState(null); const [h, setH] = useState(null);
+  const [v, setV] = useState(null); const [h, setH] = useState(null); const pg = usePaged(rows, 20);
   if (!rows.length) return <Empty>No QC manuals or instructions yet.</Empty>;
-  return <>{rows.map((m) => <div key={m.id} className="manrow">
+  return <>{pg.rows.map((m) => <div key={m.id} className="manrow">
     <span className="manic">{m.path ? ICON[m.ext] || '📄' : '📝'}</span>
     <div style={{ flex: 1, minWidth: 0 }}><b>{m.title}</b> <span className="pill">v{m.version}</span>{m.badge && <span className={'pill ' + (m.badge === 'NEW' ? 'pnew' : 'pupd')}>{m.badge}</span>}{m.priority === 'HIGH' && <span className="pill phigh">MANDATORY</span>}
       <small>{m.client_code} · {m.scope_label} · {m.uploader_role === 'vendor' ? 'Vendor note' : 'Client manual'} · updated {fdate(m.created_at, 'd M Y')}{m.file_name ? ' · ' + m.file_name : ''}</small>
@@ -37,6 +37,7 @@ export function ManualList({ rows, onEdit, onDelete, compact }) {
       {!compact && m.can_edit && onDelete && <button className="btn sm" style={{ color: 'var(--ruby)' }} onClick={() => onDelete(m)}>✕</button>}</div>
   </div>)}
   <ManualViewer m={v} onClose={() => setV(null)} />
+  <Pager pg={pg} label="manuals" />
   <Modal open={!!h} title={h ? 'Version history · ' + h.title : ''} onClose={() => setH(null)}>{h && h.history.map((x) => <div key={x.id} className="manrow"><span className="manic">{x.path ? ICON[x.ext] || '📄' : '📝'}</span>
     <div style={{ flex: 1 }}><b>v{x.version}</b><small>{fdate(x.created_at, 'd M Y, h:i A')} · {x.uploader}{x.file_name ? ' · ' + x.file_name : ''}</small></div>
     <button className="btn sm" onClick={() => { setH(null); setV(x); }}>View</button></div>)}</Modal></>;

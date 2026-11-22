@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl } from '../app/api';
-import { Badge, Empty, HBars, Icon, Kpi, Loader, Result, useApi } from '../app/ui';
+import { Badge, Empty, HBars, Icon, Kpi, Loader, Result, useApi, Paged } from '../app/ui';
 import { fdate, num } from '../app/util';
 
 const done = (s) => ['EMAILED', 'CLOSED'].includes(s);
@@ -21,10 +21,10 @@ export function ClientDash() {
     <TodaySummaryCard />
     <div className="grid g-73">
       <div className="card"><div className="card-h"><h2>QC requests across my vendors</h2><Link to="/requests">All</Link></div>
-        {!d.jobs.length ? <Empty>No QC requests yet.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>Job / Req</th><th>Vendor</th><th>PO no.</th><th>Scope / qty</th><th>QC date</th><th>Status</th></tr></thead><tbody>
-          {d.jobs.map((j) => <tr key={j.id}><td><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></td><td>{j.vendor_name}</td><td className="mono">{j.po_no}</td>
+        {!d.jobs.length ? <Empty>No QC requests yet.</Empty> : <Paged rows={d.jobs} per={10} label="requests">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Job / Req</th><th>Vendor</th><th>PO no.</th><th>Scope / qty</th><th>QC date</th><th>Status</th></tr></thead><tbody>
+          {pr.map((j) => <tr key={j.id}><td><Link className="strong" to={'/request/' + j.id}>{j.job_no || j.req_no}</Link></td><td>{j.vendor_name}</td><td className="mono">{j.po_no}</td>
             <td>{j.scope === 'SAMPLE' ? 'Sample' : j.bulk_mode === 'AQL' ? 'Bulk AQL' : 'Bulk'} / {num(j.qty)}</td><td>{fdate(j.scheduled_date || j.requested_date, 'd M')}</td>
-            <td>{done(j.status) ? <><Result r={j.res} /> <a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ job: j.id })}>PDF</a></> : <Badge s={j.status} />}</td></tr>)}</tbody></table></div>}
+            <td>{done(j.status) ? <><Result r={j.res} /> <a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ job: j.id })}>PDF</a></> : <Badge s={j.status} />}</td></tr>)}</tbody></table></div>}</Paged>}
       </div>
       <div>
         {!!d.concessions.length && (() => { const c = d.concessions[0]; const x = c.dev[0]; return <div className="card" style={{ borderColor: '#efc3ca' }}><div className="card-h"><h2>Concession approval needed</h2><Badge s="CONDITIONAL" /></div>
@@ -54,9 +54,9 @@ export function VendorDash() {
     {!!d.holds && <div className="note ruby mb"><b>{d.holds} design(s) held for your confirmation</b> — the inspector is waiting. <Link to="/approvals">Respond now →</Link></div>}
     <div className="grid g-73">
       <div className="card"><div className="card-h"><h2>My QC requests</h2><div className="actions">{can && <Link className="btn sm" to="/import">Bulk Excel</Link>}<Link to="/requests">All</Link></div></div>
-        {!d.jobs.length ? <Empty>No QC requests yet.</Empty> : <div className="tbl-wrap"><table className="t"><thead><tr><th>Req ID</th><th>Client</th><th>PO no.</th><th>QC scope</th><th>Req. date</th><th>Status</th></tr></thead><tbody>
-          {d.jobs.map((j) => <tr key={j.id}><td><Link className="strong" to={'/request/' + j.id}>{done(j.status) ? j.job_no || j.req_no : j.req_no}</Link></td><td>{j.client_code}</td><td className="mono">{j.po_no}</td>
-            <td>{j.scope_label}</td><td>{fdate(j.requested_date, 'd M')}</td><td>{done(j.status) ? <><Result r={j.res} /> <a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ job: j.id })}>PDF</a></> : <Badge s={j.status} />}</td></tr>)}</tbody></table></div>}
+        {!d.jobs.length ? <Empty>No QC requests yet.</Empty> : <Paged rows={d.jobs} per={10} label="requests">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Req ID</th><th>Client</th><th>PO no.</th><th>QC scope</th><th>Req. date</th><th>Status</th></tr></thead><tbody>
+          {pr.map((j) => <tr key={j.id}><td><Link className="strong" to={'/request/' + j.id}>{done(j.status) ? j.job_no || j.req_no : j.req_no}</Link></td><td>{j.client_code}</td><td className="mono">{j.po_no}</td>
+            <td>{j.scope_label}</td><td>{fdate(j.requested_date, 'd M')}</td><td>{done(j.status) ? <><Result r={j.res} /> <a className="btn sm" target="_blank" rel="noreferrer" href={pdfUrl({ job: j.id })}>PDF</a></> : <Badge s={j.status} />}</td></tr>)}</tbody></table></div>}</Paged>}
         <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>You see only your own requests. {!can && '“New QC request” appears when JEWELSETU enables self-service requests — until then JEWELSETU Back Office creates them for you.'}</p>
       </div>
       <div>

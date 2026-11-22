@@ -4,7 +4,7 @@ import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom
 import { MPage } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { flushQueue, pdfUrl, queue, post } from '../app/api';
-import { Badge, Empty, Icon, Loader, useApi, Thumb, Modal, useToast } from '../app/ui';
+import { Badge, Empty, Icon, Loader, useApi, Thumb, Modal, useToast, Paged } from '../app/ui';
 import { fdate, fdt, initials, num } from '../app/util';
 import { PasswordForm, ProfileHead } from './Account';
 
@@ -190,9 +190,9 @@ export function AppHistory() {
   const [f, setF] = useState('ALL'); const q = useApi('app/history', { f });
   return <MPage title="My QC history">
     <div className="tabs">{[['ALL', 'All'], ['SUBMITTED', 'Submitted'], ['RETURNED', 'Returned'], ['APPROVED', 'Approved']].map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setF(k); }}>{l}</a>)}</div>
-    <Loader q={q}>{(d) => <div className="mcard"><div className="mlist">{!d.rows.length && <Empty>Nothing here yet.</Empty>}
-      {d.rows.map((r) => r.status === 'APPROVED' ? <a key={r.id} href={pdfUrl({ item: r.id })} target="_blank" rel="noreferrer"><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.report_no}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.approved_at, 'd M')} · {r.sku}</small></span></span><Badge s={r.status} /></a>
-        : <Link key={r.id} to={'/app/inspect/' + r.id}><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.sku}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.submitted_at, 'd M')} · {r.job_no}</small></span></span><Badge s={r.status} /></Link>)}</div></div>}</Loader>
+    <Loader q={q}>{(d) => <div className="mcard"><Paged rows={d.rows} per={20} label="reports" resetKey={f}>{(pr) => <div className="mlist">{!d.rows.length && <Empty>Nothing here yet.</Empty>}
+      {pr.map((r) => r.status === 'APPROVED' ? <a key={r.id} href={pdfUrl({ item: r.id })} target="_blank" rel="noreferrer"><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.report_no}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.approved_at, 'd M')} · {r.sku}</small></span></span><Badge s={r.status} /></a>
+        : <Link key={r.id} to={'/app/inspect/' + r.id}><span className="mitem"><Thumb src={r.img} size={40} /><span><b className="mono">{r.sku}</b><small>{r.vendor_name} · {r.client_code} · {fdate(r.submitted_at, 'd M')} · {r.job_no}</small></span></span><Badge s={r.status} /></Link>)}</div>}</Paged></div>}</Loader>
   </MPage>;
 }
 
@@ -204,8 +204,8 @@ export function AppAlerts() {
       <p style={{ margin: '6px 0', fontSize: 13 }}>{r.job_no} · {r.sku} — {r.return_reason}</p>
       <p style={{ fontSize: 12, margin: '0 0 8px' }}>{String(r.return_sections || '').split(',').filter((x) => x.trim()).map((x) => <span key={x}><Badge s="RETURNED" /> {x.trim()}<br /></span>)}</p>
       <Link className="bigbtn ruby" to={'/app/inspect/' + r.id}>FIX &amp; RESUBMIT</Link></div>)}
-    <div className="mcard"><div className="mlist">{!d.items.length && <Empty>No notifications.</Empty>}
-      {d.items.map((n) => <Link key={n.id} to={'/' + (n.link || 'app')}><span><b style={{ fontWeight: +n.is_read ? 500 : 700 }}>{n.text}</b><small>{fdt(n.created_at)}</small></span></Link>)}</div></div>
+    <div className="mcard"><Paged rows={d.items} per={20} label="notifications">{(pr) => <div className="mlist">{!d.items.length && <Empty>No notifications.</Empty>}
+      {pr.map((n) => <Link key={n.id} to={'/' + (n.link || 'app')}><span><b style={{ fontWeight: +n.is_read ? 500 : 700 }}>{n.text}</b><small>{fdt(n.created_at)}</small></span></Link>)}</div>}</Paged></div>
   </>}</Loader></MPage>;
 }
 

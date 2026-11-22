@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Multi, Result, Sel, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Multi, Result, Sel, useAction, useApi, useForm, Paged } from '../app/ui';
 import { fdate } from '../app/util';
 
 const blank = { id: 0, code: 'VND-', short_code: '', name: '', contact: '', email: '', phone: '', ho_email: '', address: '', location: '', geo_lat: '', geo_lng: '', geo_radius: '', status: 'ACTIVE', client_ids: [], create_login: false, login_pw: '' };
@@ -23,11 +23,11 @@ export default function Vendors() {
           <input type="search" name="q" defaultValue={sp.get('q') || ''} placeholder="Search vendor…" />
           {role !== 'client' && <Sel value={sp.get('client') || ''} onChange={(v) => setSp({ client: v })} options={d.clients.map((c) => [c.id, c.code])} blank="Client: All" />}
           <button className="btn sm">Search</button></form>
-        <div className="tbl-wrap"><table className="t"><thead><tr><th>Vendor</th><th>Mapped clients</th><th>Location</th><th className="num">Total QC</th><th className="num">Rejection %</th><th>Status</th></tr></thead><tbody>
-          {d.rows.map((v) => <tr key={v.id} className={'click ' + (sel?.id === v.id ? 'sel' : '')} onClick={() => setSp({ id: v.id })}>
+        <Paged rows={d.rows} per={25} label="vendors">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Vendor</th><th>Mapped clients</th><th>Location</th><th className="num">Total QC</th><th className="num">Rejection %</th><th>Status</th></tr></thead><tbody>
+          {pr.map((v) => <tr key={v.id} className={'click ' + (sel?.id === v.id ? 'sel' : '')} onClick={() => setSp({ id: v.id })}>
             <td><span className="avatar">{v.name[0]}</span><b>{v.name}</b></td><td>{v.clients.join(', ')}</td><td>{v.location}</td><td className="num">{v.n}</td>
             <td className={'num ' + (v.rate > 5 ? 'bad-t' : '')}>{Number(v.rate).toFixed(1)}%</td><td><Badge s={v.status} /></td></tr>)}
-        </tbody></table></div>
+        </tbody></table></div>}</Paged>
       </div>
       <div>
         {sel && !edit ? <div className="card">

@@ -216,7 +216,7 @@ api('GET', 'settings', R_INT, function () {
         'defects' => all('SELECT d.*, c.name category FROM defect_master d JOIN defect_categories c ON c.id=d.category_id ORDER BY c.sort, d.name'),
         'checkpoints' => all('SELECT k.*, c.code client_code FROM checkpoints k LEFT JOIN clients c ON c.id=k.client_id ORDER BY k.client_id, k.sort, k.id'),
         'tests' => all('SELECT * FROM onsite_tests ORDER BY sort, id'), 'product_categories' => all('SELECT * FROM product_categories ORDER BY name'), 'qc_types' => all('SELECT * FROM qc_types ORDER BY id'),
-        'aql' => ['level' => $lv, 'aqls' => $A, 'rows' => $aql], 'emails' => all('SELECT * FROM email_log ORDER BY id DESC LIMIT 25'),
+        'aql' => ['level' => $lv, 'aqls' => $A, 'rows' => $aql], 'emails' => all('SELECT * FROM email_log ORDER BY id DESC LIMIT 1000'),
         'clients' => all('SELECT id, code FROM clients ORDER BY code'), 'example_report_no' => 'JS/' . date('Y/m') . '/KP_AJ/001'];
 });
 api('POST', 'settings/save', ['super_admin'], function () {

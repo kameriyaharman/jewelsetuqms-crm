@@ -15,7 +15,7 @@ api('GET', 'site/pub/posts', null, function () {
     if ($c = trim((string)in_('cat'))) { $w[] = 'category=?'; $p[] = $c; }
     if ($t = trim((string)in_('tag'))) { $w[] = 'tags LIKE ?'; $p[] = '%' . $t . '%'; }
     if ($s = trim((string)in_('q'))) { $w[] = '(title LIKE ? OR excerpt LIKE ? OR tags LIKE ? OR category LIKE ?)'; array_push($p, "%$s%", "%$s%", "%$s%", "%$s%"); }
-    $lim = max(1, min(60, (int)in_('limit', 30)));
+    $lim = max(1, min(500, (int)in_('limit', 30)));
     $rows = all('SELECT id, slug, title, excerpt, cover, category, tags, author, read_min, featured, published_at, status FROM site_posts WHERE ' . implode(' AND ', $w) . " ORDER BY published_at DESC, id DESC LIMIT $lim", $p);
     return ['posts' => array_map('post_card', $rows)];
 });
@@ -199,7 +199,7 @@ function leads_where(): array {
 }
 api('GET', 'site/admin/leads', SITE_ADMIN, function () {
     [$w, $p] = leads_where();
-    $rows = all("SELECT * FROM site_leads WHERE $w ORDER BY id DESC LIMIT 500", $p);
+    $rows = all("SELECT * FROM site_leads WHERE $w ORDER BY id DESC LIMIT 5000", $p);
     foreach ($rows as &$r) $r['file_url'] = $r['file_path'] ? site_root() . '/api/file?p=' . rawurlencode($r['file_path']) . '&dl=1' : null;
     $counts = []; foreach (all('SELECT status, COUNT(*) n FROM site_leads GROUP BY status') as $c) $counts[$c['status']] = (int)$c['n'];
     return ['leads' => $rows, 'counts' => $counts, 'statuses' => LEAD_STATUS];
@@ -227,7 +227,7 @@ api('GET', 'site/admin/leads.csv', SITE_ADMIN, function () {
 
 /* ---- downloads & lead magnets ---- */
 api('GET', 'site/admin/downloads', SITE_ADMIN, function () {
-    return ['rows' => all('SELECT d.*, m.title magnet, p.title post FROM site_downloads d LEFT JOIN site_magnets m ON m.id=d.magnet_id LEFT JOIN site_posts p ON p.id=d.post_id ORDER BY d.id DESC LIMIT 1000')];
+    return ['rows' => all('SELECT d.*, m.title magnet, p.title post FROM site_downloads d LEFT JOIN site_magnets m ON m.id=d.magnet_id LEFT JOIN site_posts p ON p.id=d.post_id ORDER BY d.id DESC LIMIT 5000')];
 });
 api('GET', 'site/admin/downloads.csv', SITE_ADMIN, function () {
     csv_out('pdf-downloads-' . date('Ymd') . '.csv', ['ID', 'Date', 'Name', 'Company', 'Email', 'Lead magnet', 'From article'],

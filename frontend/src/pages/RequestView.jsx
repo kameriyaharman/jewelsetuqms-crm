@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { fileUrl, pdfUrl, post, upload } from '../app/api';
-import { Badge, Empty, Flow, Icon, Loader, Modal, Result, Sel, useAction, useApi, useForm, useToast, Thumb } from '../app/ui';
+import { Badge, Empty, Flow, Icon, Loader, Modal, Result, Sel, useAction, useApi, useForm, useToast, Thumb, Paged } from '../app/ui';
 import { fdate, fdt, num, today } from '../app/util';
 import { SchedulePanel } from './Requests';
 import { DeleteJobs } from './Jobs';
@@ -42,8 +42,8 @@ export default function RequestView() {
           {d.manuals?.length > 0 && <div className="manbanner"><span>📘 <b>{d.manuals.length} active client QC manual{d.manuals.length > 1 ? 's' : ''} / special instruction{d.manuals.length > 1 ? 's' : ''}</b> available for {j.client_code}{d.manuals.some((m) => m.priority === 'HIGH') ? ' · includes mandatory' : ''}</span><button className="btn sm pri" onClick={() => setMan(true)}>View / Download</button></div>}
           <div className="card"><div className="card-h"><h2>SKUs / designs ({d.items.filter((i) => !i.parent_id).length}){d.items.some((i) => i.parent_id) && <small className="muted"> · {d.items.length} QC lots</small>}</h2>
             {c.edit_design && <button className="btn sm" onClick={() => setEdit({ job_id: j.id, scope: 'JOB', product: '', metal: '925 Silver' })}><Icon n="plus" /> Add design</button>}</div>
-            <div className="tbl-wrap"><table className="t"><thead><tr><th>Image</th><th>SKU</th><th>Product</th><th>Style ref / stone</th><th>Metal / plating</th><th className="num">Order</th><th className="num">Ready</th><th className="num">Insp. qty</th><th className="num">Rej.</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
-              {d.items.map((i) => { const pub = i.status === 'APPROVED'; return <Fragment key={i.id}><tr>
+            <Paged rows={d.items} per={25} label="SKUs">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Image</th><th>SKU</th><th>Product</th><th>Style ref / stone</th><th>Metal / plating</th><th className="num">Order</th><th className="num">Ready</th><th className="num">Insp. qty</th><th className="num">Rej.</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
+              {pr.map((i) => { const pub = i.status === 'APPROVED'; return <Fragment key={i.id}><tr>
                 <td>{i.parent_id ? <span className="muted" style={{ paddingLeft: 18 }}>↳</span> : <Thumb src={i.img} size={56} alt={i.sku} />}</td><td><b className="mono">{i.sku}</b>{(i.parent_id || i.line?.lots > 1) && <> <span className="pill">Lot {i.lot_seq || 1}{i.insp_date ? ' · ' + fdate(i.insp_date, 'd M') : ''}</span></>}
                   {i.target_weight && !i.parent_id && <><br /><small className="muted" style={{ whiteSpace: 'nowrap' }}>{i.target_weight}</small></>}{i.scope_label && <><br /><small className="pill">{i.scope_label}</small></>}
                   {i.line && (i.line.lots > 1 || (i.line.accepted > 0 && !i.line.complete) || i.line.closed) && <div className="cum"><span>Order {num(i.line.order)}</span><span className="ok">OK {num(i.line.accepted)}</span><span className={i.line.pending ? 'p' : ''}>{i.line.closed ? 'Force closed' : `Pending ${num(i.line.pending)}`}</span></div>}
@@ -63,7 +63,7 @@ export default function RequestView() {
                   <div className="specgrid">{i.instructions && <div className="note gold" style={{ margin: 0 }}><b>Client instructions:</b><p className="spec-pre">{i.instructions}</p></div>}
                   <div>{(i.length || i.lock_type) && <p className="spec-pre"><b>Size / lock:</b> {[i.length, i.lock_type].filter(Boolean).join(' · ')}</p>}{i.spec_detail && <p className="spec-pre">{i.spec_detail}</p>}</div></div></details></td></tr>}
                 </Fragment>; })}
-            </tbody></table></div>
+            </tbody></table></div>}</Paged>
           </div>
           {!!d.emails.length && <div className="card"><h2 className="mb">Email history</h2><table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>
             {d.emails.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{e.subject}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table></div>}

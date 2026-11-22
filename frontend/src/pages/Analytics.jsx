@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { apiUrl } from '../app/api';
 import { useAuth } from '../app/auth';
-import { Badge, Empty, HBars, Icon, Kpi, Loader, Sel, useApi } from '../app/ui';
+import { Badge, Empty, HBars, Icon, Kpi, Loader, Sel, useApi, Paged, usePaged, Pager } from '../app/ui';
 import { fdate, num } from '../app/util';
 
 const TABS = [['client', 'Client-wise MIS & billing'], ['vendor', 'Vendor performance'], ['team', 'Team / inspector productivity'], ['sku', 'Design / SKU register'], ['defects', 'Defect Pareto & root cause']];
@@ -95,20 +95,21 @@ function TeamTab({ d }) {
       {d.inspectors.map((u) => <tr key={u.id}><td><b className="mono">{u.code}</b> {u.name}</td><td className="num"><b>{u.visits}</b></td><td className="num">{u.designs}</td><td className="num">{num(u.insp)}</td><td className="num">{num(u.avg_day)}</td><td className="num">{u.tat != null ? u.tat + ' h' : '—'}</td><td className={'num ' + (u.returned ? 'bad-t' : '')}>{u.returned}</td><td className="num">{p2(u.fta)}%</td></tr>)}
     </tbody></table></div>}</div>
     <div className="card"><div className="card-h"><h2>Daily activity log</h2><span className="muted">{d.daily.length} visit(s)</span></div>
-      {!d.daily.length ? <Empty>No activity.</Empty> : <div className="tbl-wrap" style={{ maxHeight: 520 }}><table className="t"><thead><tr><th>Date</th><th>Inspector</th><th>Vendor</th><th>Client</th><th>PO(s)</th><th className="num">Designs</th><th className="num">Pcs checked</th><th className="num">Accepted</th><th className="num">Rej / repair</th></tr></thead><tbody>
-        {d.daily.map((x, i) => <tr key={i}><td>{fdate(x.d, 'd M Y')}</td><td>{x.insp}</td><td>{x.vendor}</td><td>{x.client}</td><td className="mono" style={{ fontSize: 12 }}>{x.pos}</td><td className="num">{x.skus}</td><td className="num"><b>{num(x.pcs)}</b></td><td className="num">{num(x.acc)}</td><td className="num">{num(x.rej)}</td></tr>)}
-      </tbody></table></div>}</div></>;
+      {!d.daily.length ? <Empty>No activity.</Empty> : <Paged rows={d.daily} per={25} label="visits">{(pr) => <div className="tbl-wrap" style={{ maxHeight: 520 }}><table className="t"><thead><tr><th>Date</th><th>Inspector</th><th>Vendor</th><th>Client</th><th>PO(s)</th><th className="num">Designs</th><th className="num">Pcs checked</th><th className="num">Accepted</th><th className="num">Rej / repair</th></tr></thead><tbody>
+        {pr.map((x, i) => <tr key={i}><td>{fdate(x.d, 'd M Y')}</td><td>{x.insp}</td><td>{x.vendor}</td><td>{x.client}</td><td className="mono" style={{ fontSize: 12 }}>{x.pos}</td><td className="num">{x.skus}</td><td className="num"><b>{num(x.pcs)}</b></td><td className="num">{num(x.acc)}</td><td className="num">{num(x.rej)}</td></tr>)}
+      </tbody></table></div>}</Paged>}</div></>;
 }
 
 function SkuTable({ rows, compact }) {
   const T = useMemo(() => ({ designs: new Set(rows.map((r) => r.sku)).size, order: rows.reduce((a, r) => a + r.order, 0), offered: rows.reduce((a, r) => a + r.offered, 0), insp: rows.reduce((a, r) => a + r.insp, 0), acc: rows.reduce((a, r) => a + r.acc, 0), rej: rows.reduce((a, r) => a + r.rej, 0) }), [rows]);
+  const pg = usePaged(rows, compact ? 25 : 50);
   if (!rows.length) return <Empty>No designs.</Empty>;
-  return <div className="tbl-wrap" style={{ maxHeight: compact ? 360 : 620 }}><table className="t"><thead><tr><th>Date</th><th>Job card</th><th>Report no.</th>{!compact && <><th>Client</th><th>Vendor</th></>}<th>PO</th><th>SKU / design</th><th>Product</th><th>QC scope</th><th className="num">Order</th><th className="num">Offered</th><th className="num">Inspected</th><th className="num">Accepted</th><th className="num">Rej / repair</th><th>Result</th><th>Inspector</th></tr></thead><tbody>
-    {rows.map((r) => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{fdate(r.d, 'd M')}</td><td><Link to={'/request/' + r.job_id} className="mono">{r.job_no}</Link></td><td>{r.report_no ? <Link to={'/report/' + r.id} className="mono" style={{ fontSize: 12 }}>{r.report_no}</Link> : '—'}</td>
+  return <><div className="tbl-wrap" style={{ maxHeight: compact ? 360 : 620 }}><table className="t"><thead><tr><th>Date</th><th>Job card</th><th>Report no.</th>{!compact && <><th>Client</th><th>Vendor</th></>}<th>PO</th><th>SKU / design</th><th>Product</th><th>QC scope</th><th className="num">Order</th><th className="num">Offered</th><th className="num">Inspected</th><th className="num">Accepted</th><th className="num">Rej / repair</th><th>Result</th><th>Inspector</th></tr></thead><tbody>
+    {pg.rows.map((r) => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{fdate(r.d, 'd M')}</td><td><Link to={'/request/' + r.job_id} className="mono">{r.job_no}</Link></td><td>{r.report_no ? <Link to={'/report/' + r.id} className="mono" style={{ fontSize: 12 }}>{r.report_no}</Link> : '—'}</td>
       {!compact && <><td>{r.client}</td><td>{r.vendor}</td></>}<td className="mono">{r.po}</td><td><b className="mono">{r.sku}</b>{r.lot > 1 && <small> · lot {r.lot}</small>}</td><td>{r.product}</td><td><small>{r.scope}</small></td>
       <td className="num">{num(r.order)}</td><td className="num">{num(r.offered)}</td><td className="num">{num(r.insp)}</td><td className="num">{num(r.acc)}</td><td className="num">{num(r.rej)}</td><td><Badge s={r.result} /></td><td><small>{r.inspector}</small></td></tr>)}
     <tr className="tot"><td colSpan={compact ? 4 : 6}><b>Grand total · {T.designs} design(s) · {rows.length} lot(s)</b></td><td colSpan={2}></td><td className="num"><b>{num(T.order)}</b></td><td className="num"><b>{num(T.offered)}</b></td><td className="num"><b>{num(T.insp)}</b></td><td className="num"><b>{num(T.acc)}</b></td><td className="num"><b>{num(T.rej)}</b></td><td colSpan={2}></td></tr>
-  </tbody></table></div>;
+  </tbody></table></div><Pager pg={pg} label="lots" /></>;
 }
 function SkuTab({ d }) {
   return <div className="card"><div className="card-h"><h2>Design / SKU-wise master register</h2><span className="muted">Every inspected lot, day by day</span></div><SkuTable rows={d.register} /></div>;

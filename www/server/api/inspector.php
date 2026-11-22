@@ -129,7 +129,7 @@ api('GET', 'app/history', ['inspector'], function () {
     $sql = "SELECT " . img_item_sql() . " img, i.id, i.sku, i.status, i.report_no, i.approved_at, i.submitted_at, j.job_no, v.name vendor_name, c.code client_code FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id JOIN vendors v ON v.id=j.vendor_id JOIN clients c ON c.id=j.client_id
         WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','RETURNED','APPROVED')";
     if (isset($map[$f])) $sql .= " AND i.status IN ('" . implode("','", $map[$f]) . "')";
-    return ['rows' => all($sql . ' ORDER BY COALESCE(i.approved_at, i.submitted_at) DESC LIMIT 100', [$me['id'], $me['id']])];
+    return ['rows' => all($sql . ' ORDER BY COALESCE(i.approved_at, i.submitted_at) DESC LIMIT 2000', [$me['id'], $me['id']])];
 });
 
 api('POST', 'app/inspect', ['inspector', 'super_admin'], function () {

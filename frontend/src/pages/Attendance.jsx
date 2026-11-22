@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Page } from '../app/Layout';
 import { apiUrl, post } from '../app/api';
-import { Empty, Loader, Modal, Sel, useAction, useApi } from '../app/ui';
+import { Empty, Loader, Modal, Sel, useAction, useApi, Paged } from '../app/ui';
 import { fdate } from '../app/util';
 
 const hm = (m) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
@@ -30,8 +30,8 @@ export default function Attendance() {
         {d.summary.map((s) => <tr key={s.uid} className="rowlink" onClick={() => setUser(String(s.uid))}><td><b>{s.code}</b> · {s.name}</td><td className="num">{s.present}</td><td className="num">{s.leave}</td><td className="num">{s.absent}</td><td className="num strong">{hrs(s.min)}</td><td className="num">{hm(s.avg)}</td><td className="num">{s.visits}</td><td className="num">{s.designs} / {s.pcs}</td>
           <td className="num" style={s.missed ? { color: 'var(--ruby)', fontWeight: 700 } : {}}>{s.missed}</td><td className="num" style={s.late ? { color: '#b4561b', fontWeight: 700 } : {}}>{s.late}</td></tr>)}</tbody></table></div></div>}
       <div className="card"><h2 className="mb">Daily attendance &amp; visit log{user ? ' · ' + (d.users.find((u) => String(u.id) === String(user))?.label || '') : ''}</h2>
-        {!d.rows.length ? <Empty>No check-ins this month.</Empty> : <div className="tbl-wrap"><table className="t att"><thead><tr><th>Date</th><th>Day</th><th>Inspector</th><th>Vendor visited (client)</th><th>Check-in time &amp; GPS</th><th>Check-out time &amp; GPS</th><th>Visit duration</th><th>Daily working hrs</th><th>Designs / pcs</th><th>Status</th></tr></thead><tbody>
-          {d.rows.map((r) => <tr key={r.date + r.uid}>
+        {!d.rows.length ? <Empty>No check-ins this month.</Empty> : <Paged rows={d.rows} per={25} label="days">{(pr) => <div className="tbl-wrap"><table className="t att"><thead><tr><th>Date</th><th>Day</th><th>Inspector</th><th>Vendor visited (client)</th><th>Check-in time &amp; GPS</th><th>Check-out time &amp; GPS</th><th>Visit duration</th><th>Daily working hrs</th><th>Designs / pcs</th><th>Status</th></tr></thead><tbody>
+          {pr.map((r) => <tr key={r.date + r.uid}>
             <td className="nowrap">{fdate(r.date, 'd-m-Y')}</td><td>{r.day}</td><td className="nowrap">{r.insp}</td>
             <td>{r.sessions.length ? r.sessions.map((s, i) => <div key={s.id}>{r.sessions.length > 1 ? `${i + 1}. ` : ''}<b>{s.vendor}</b>{s.client ? ` (${s.client})` : ''}</div>) : '—'}</td>
             <td>{r.sessions.length ? r.sessions.map((s) => <div key={s.id} className="nowrap">{tm(s.in)} <span className={s.in_ok ? 'gok' : 'gpend'}>{s.in_ok ? '(Verified ✓)' : '(pin pending)'}</span>{s.lat && <a className="gmap" target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${s.lat},${s.lng}`} title="Open GPS on map">📍</a>}</div>) : '—'}</td>
@@ -41,7 +41,7 @@ export default function Attendance() {
               {s.fix_note && <small className="muted" style={{ display: 'block' }}>✎ {s.fixer}: {s.fix_note}</small>}</div>) : '—'}</td>
             <td>{r.sessions.length ? r.sessions.map((s) => <div key={s.id}>{s.out || s.live ? hm(s.min) : '—'}</div>) : '—'}</td>
             <td className="strong nowrap">{hrs(r.min)}</td><td className="nowrap">{r.designs ? `${String(r.designs).padStart(2, '0')} SKUs / ${r.pcs} pcs` : '—'}</td>
-            <td><span className={'badge ' + (ST[r.status] || '')}>{r.status}</span>{r.leave && <small className="muted" style={{ display: 'block' }}>{r.leave}</small>}{r.flags.map((f) => <span key={f} className={'badge ' + (f.startsWith('MISSED') && !f.includes('fixed') ? 'b-fail' : 'b-pending')} style={{ display: 'inline-block', marginTop: 3 }}>{f}</span>)}</td></tr>)}</tbody></table></div>}</div>
+            <td><span className={'badge ' + (ST[r.status] || '')}>{r.status}</span>{r.leave && <small className="muted" style={{ display: 'block' }}>{r.leave}</small>}{r.flags.map((f) => <span key={f} className={'badge ' + (f.startsWith('MISSED') && !f.includes('fixed') ? 'b-fail' : 'b-pending')} style={{ display: 'inline-block', marginTop: 3 }}>{f}</span>)}</td></tr>)}</tbody></table></div>}</Paged>}</div>
       {d.register.length > 0 && <div className="card"><h2 className="mb">Vendor-wise visit register</h2><table className="t"><thead><tr><th>Vendor / factory</th><th className="num">Visits</th><th className="num">Hours at factory</th><th className="num">Pcs checked</th><th>Visit dates &amp; inspectors</th></tr></thead><tbody>
         {d.register.map((g) => <tr key={g.vendor}><td><b>{g.vendor}</b></td><td className="num">{g.visits}</td><td className="num">{hrs(g.min)}</td><td className="num">{g.pcs}</td><td style={{ fontSize: 12, whiteSpace: 'normal', maxWidth: 560 }}>{g.list.map((x, i) => <span key={i} style={{ display: 'inline-block', marginRight: 4 }}>{fdate(x.date, 'd M')} · {x.insp.split(' · ')[0]} ({hm(x.min)}){i < g.list.length - 1 ? ', ' : ''}</span>)}</td></tr>)}</tbody></table></div>}
       {fix && <Modal open title={`Verify check-out · ${fix.insp} · ${fdate(fix.date, 'd M Y')}`} onClose={() => setFix(null)}>

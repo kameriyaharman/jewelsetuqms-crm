@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, InspSt, Loader, Sel, useAction, useApi, useForm, useToast, Avatar } from '../app/ui';
+import { Badge, Empty, Icon, InspSt, Loader, Sel, useAction, useApi, useForm, useToast, Avatar, Paged } from '../app/ui';
 import { fdate, fdt, initials, today } from '../app/util';
 
 const TABS = [['internal', 'All staff'], ['inspector', 'Inspectors'], ['qc_manager', 'Managers'], ['back_office', 'Back office'], ['portal', 'Client / vendor logins']];
@@ -22,10 +22,10 @@ export default function Team() {
     <Loader q={q}>{(d) => <div className="grid g-73">
       <div className="card">
         <div className="tabs">{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l}</a>)}</div>
-        <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th>{d.show_pw && <th>Password</th>}<th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
-          {d.rows.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp({ f, id: u.id })}><td className="mono">{u.emp_code || u.email}</td>{d.show_pw && <td onClick={(e) => e.stopPropagation()}><Pw value={u.password} /></td>}
+        <Paged rows={d.rows} per={25} label="logins" resetKey={f}>{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th>{d.show_pw && <th>Password</th>}<th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
+          {pr.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp({ f, id: u.id })}><td className="mono">{u.emp_code || u.email}</td>{d.show_pw && <td onClick={(e) => e.stopPropagation()}><Pw value={u.password} /></td>}
             <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={u.name} photo={u.photo} size={30} />{u.name}</span></td><td><Badge s={u.role} label={d.roles[u.role]} /></td><td>{u.ccode || u.vname || u.location}</td><td>{u.last_login ? fdt(u.last_login) : '—'}</td><td>{u.live ? <InspSt st={u.live} small /> : <Badge s={u.status} />}</td></tr>)}
-        </tbody></table></div>
+        </tbody></table></div>}</Paged>
         {!!d.perf.length && <><h2 className="mb mt">Team this month</h2><table className="t"><thead><tr><th>Inspector</th><th className="num">Done</th><th className="num">Avg time</th><th className="num">Return %</th><th className="num">1st-time approval</th></tr></thead><tbody>
           {d.perf.map((u) => <tr key={u.id}><td>{u.emp_code} {u.name.split(' ')[0]}</td><td className="num">{u.done}</td><td className="num">{u.avg.toFixed(1)} h</td><td className="num">{Math.round(u.ret)}%</td><td className="num">{Math.round(u.first)}%</td></tr>)}</tbody></table></>}
       </div>

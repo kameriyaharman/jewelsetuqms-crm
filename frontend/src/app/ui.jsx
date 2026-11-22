@@ -158,3 +158,36 @@ export function Avatar({ name, photo, size = 34, className = 'avatar', style }) 
   const st = { width: size, height: size, fontSize: Math.round(size / 2.9), ...style };
   return photo ? <img className={className + ' avimg'} src={photo} alt={name} style={{ ...st, objectFit: 'cover', padding: 0 }} /> : <span className={className} style={{ display: 'grid', placeItems: 'center', ...st }}>{initials(name || '?')}</span>;
 }
+
+/* ---------- pagination ---------- */
+const PER_OPTS = [10, 25, 50, 100];
+/** page numbers with gaps: 1 … 4 5 6 … 20 */
+function pageList(p, n) {
+  const s = new Set([1, n, p - 1, p, p + 1].filter((x) => x >= 1 && x <= n)); const a = [...s].sort((x, y) => x - y); const out = [];
+  a.forEach((x, i) => { if (i && x - a[i - 1] > 1) out.push('…' + x); out.push(x); }); return out;
+}
+/** Splits `rows` into pages; returns the current page's rows + controls. Resets to page 1 when the list length or `resetKey` changes. */
+export function usePaged(rows, per0 = 25, resetKey) {
+  const list = rows || []; const [page, setPage] = useState(1); const [per, setPer] = useState(per0);
+  useEffect(() => { setPage(1); }, [list.length, resetKey]);
+  const pages = Math.max(1, Math.ceil(list.length / per)); const p = Math.min(page, pages);
+  return { rows: list.slice((p - 1) * per, p * per), page: p, pages, total: list.length, per, setPage, setPer: (n) => { setPer(n); setPage(1); }, from: list.length ? (p - 1) * per + 1 : 0, to: Math.min(p * per, list.length) };
+}
+export function Pager({ pg, label = 'rows' }) {
+  if (!pg || pg.total <= PER_OPTS[0]) return null;
+  return <div className="pager">
+    <span className="muted">Showing <b>{num(pg.from)}–{num(pg.to)}</b> of <b>{num(pg.total)}</b> {label}</span>
+    <span className="pg-per"><select value={pg.per} onChange={(e) => pg.setPer(+e.target.value)}>{PER_OPTS.map((n) => <option key={n} value={n}>{n} / page</option>)}</select></span>
+    {pg.pages > 1 && <span className="pg-btns">
+      <button className="btn sm" disabled={pg.page <= 1} onClick={() => pg.setPage(pg.page - 1)} aria-label="Previous page">‹ Prev</button>
+      {pageList(pg.page, pg.pages).map((x) => (typeof x === 'string' ? <span key={x} className="muted">…</span>
+        : <button key={x} className={'btn sm' + (x === pg.page ? ' pri' : '')} onClick={() => pg.setPage(x)}>{x}</button>))}
+      <button className="btn sm" disabled={pg.page >= pg.pages} onClick={() => pg.setPage(pg.page + 1)} aria-label="Next page">Next ›</button>
+    </span>}
+  </div>;
+}
+/** Render-prop wrapper so lists rendered inside <Loader> callbacks can paginate: <Paged rows={d.rows}>{(rows) => …}</Paged> */
+export function Paged({ rows, per = 25, resetKey, label, children }) {
+  const pg = usePaged(rows, per, resetKey);
+  return <>{children(pg.rows, pg)}<Pager pg={pg} label={label} /></>;
+}

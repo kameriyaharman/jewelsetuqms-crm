@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { post, upload } from '../app/api';
-import { Avatar, Empty, Loader, useAction, useApi, useForm, useToast } from '../app/ui';
+import { Avatar, Empty, Loader, useAction, useApi, useForm, useToast, Paged } from '../app/ui';
 import { fdt } from '../app/util';
 
 export function Notifications() {
   const q = useApi('notifications'); const { refresh } = useAuth();
   useEffect(() => { if (q.data) refresh(); /* eslint-disable-next-line */ }, [q.data]);
   return <Page title="Notifications"><Loader q={q}>{(d) => <div className="card">{!d.items.length && <Empty>No notifications yet.</Empty>}
-    <div className="mlist">{d.items.map((n) => <Link key={n.id} to={'/' + (n.link || '')}><span><b style={{ fontWeight: +n.is_read ? 500 : 700 }}>{n.text}</b></span><small>{fdt(n.created_at)}</small></Link>)}</div></div>}</Loader></Page>;
+    <Paged rows={d.items} per={25} label="notifications">{(pr) => <div className="mlist">{pr.map((n) => <Link key={n.id} to={'/' + (n.link || '')}><span><b style={{ fontWeight: +n.is_read ? 500 : 700 }}>{n.text}</b></span><small>{fdt(n.created_at)}</small></Link>)}</div>}</Paged></div>}</Loader></Page>;
 }
 
 export function PasswordForm({ mobile }) {

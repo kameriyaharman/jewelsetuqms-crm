@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { post } from '../app/api';
-import { Badge, Empty, Icon, Loader, Multi, useAction, useApi, useForm } from '../app/ui';
+import { Badge, Empty, Icon, Loader, Multi, useAction, useApi, useForm, Paged } from '../app/ui';
 
 const blank = { id: 0, code: '', name: '', contact: '', email: '', phone: '', ho_email: '', address: '', report_format: 'Standard', aql_default: '2.5', fail_threshold: 80, status: 'ACTIVE', vendor_ids: [], create_login: false, login_pw: '' };
 
@@ -20,11 +20,11 @@ export default function Clients() {
       <div>
         <div className="card">
           <form className="filters" onSubmit={(e) => { e.preventDefault(); setSp({ q: e.target.q.value }); }}><input type="search" name="q" defaultValue={qs} placeholder="Search client…" /><button className="btn sm">Search</button></form>
-          <div className="tbl-wrap"><table className="t"><thead><tr><th>Client</th><th>Company</th><th>Contact</th><th className="num">Mapped vendors</th><th className="num">Total QC</th><th>Portal login</th><th>Status</th></tr></thead><tbody>
-            {d.rows.map((c) => <tr key={c.id} className={'click ' + (sel?.id === c.id ? 'sel' : '')} onClick={() => setSp({ id: c.id })}>
+          <Paged rows={d.rows} per={25} label="clients">{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Client</th><th>Company</th><th>Contact</th><th className="num">Mapped vendors</th><th className="num">Total QC</th><th>Portal login</th><th>Status</th></tr></thead><tbody>
+            {pr.map((c) => <tr key={c.id} className={'click ' + (sel?.id === c.id ? 'sel' : '')} onClick={() => setSp({ id: c.id })}>
               <td><span className="avatar">{c.code.slice(0, 3)}</span><b>{c.code}</b></td><td>{c.name}</td><td>{c.contact}</td><td className="num">{c.nv}</td><td className="num">{c.nq}</td>
               <td>{+c.nl ? <Badge s="ACTIVE" /> : <span className="muted">—</span>}</td><td><Badge s={c.status} /></td></tr>)}
-          </tbody></table></div>
+          </tbody></table></div>}</Paged>
         </div>
         {sel && !isNew && <div className="card"><div className="card-h"><h2>Client profile — {sel.code}</h2><Link to={'/requests?client=' + sel.id}>Open QC requests</Link></div>
           <div className="kv"><div><small>Head office email (auto-CC)</small><b>{sel.ho_email}</b></div><div><small>Report format</small><b>{sel.report_format}</b></div>

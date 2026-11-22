@@ -4,11 +4,13 @@ import { Bold, Clock, Code, Download, Eye, Heading2, Heading3, ImagePlus, Italic
 import { get, post, upload } from '../api';
 import { fmtDate, media } from '../site';
 import { useAdmin } from './Admin';
+import { usePaged, Pager } from './pager';
 
 export function Posts() {
   const [d, setD] = useState(null); const [q, setQ] = useState(''); const nav = useNavigate();
   useEffect(() => { get('site/admin/posts').then(setD).catch(() => setD({ posts: [] })); }, []);
   const rows = (d?.posts || []).filter((p) => !q || (p.title + ' ' + p.category).toLowerCase().includes(q.toLowerCase()));
+  const pg = usePaged(rows, 25, q);
   return <>
     <div className="atop"><div><h1 className="serif">Blog articles</h1><p>Knowledge Hub posts — published articles appear on the website, sitemap and LinkedIn / WhatsApp share cards.</p></div>
       <div className="acts"><label className="sbox"><Search /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search articles…" /></label>
@@ -16,11 +18,11 @@ export function Posts() {
     <div className="card"><div className="tbl-wrap"><table className="tbl">
       <thead><tr><th>Title</th><th>Category</th><th>Status</th><th>Views</th><th>Published</th><th>Updated</th></tr></thead>
       <tbody>{!d ? <tr><td colSpan={6}>Loading…</td></tr> : !rows.length ? <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>No articles yet.</td></tr>
-        : rows.map((p) => <tr key={p.id} onClick={() => nav('/admin/blog/' + p.id)}>
+        : pg.rows.map((p) => <tr key={p.id} onClick={() => nav('/admin/blog/' + p.id)}>
           <td><b>{p.title}</b><small>/blog/{p.slug}{p.featured ? ' · ★ Featured' : ''}</small></td><td>{p.category || '—'}</td>
           <td><span className={'st st-' + p.status}>{p.status === 'PUBLISHED' ? 'Published' : 'Draft'}</span></td><td>{p.views}</td>
           <td>{p.published_at ? fmtDate(p.published_at) : '—'}</td><td style={{ color: 'var(--muted)' }}>{fmtDate(p.updated_at)}</td></tr>)}</tbody>
-    </table></div></div>
+    </table></div><Pager pg={pg} label="articles" /></div>
   </>;
 }
 

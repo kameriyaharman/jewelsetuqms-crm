@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { apiUrl, get, post } from '../app/api';
-import { Badge, Loader, Sel, useAction, useApi } from '../app/ui';
+import { Badge, Loader, Sel, useAction, useApi, Paged } from '../app/ui';
 import { fdt, num } from '../app/util';
 
 const TABS = [['toggles', 'Feature toggles'], ['defects', 'Defect master'], ['checkpoints', 'Quality checkpoints'], ['tests', 'On-site tests'], ['masters', 'Categories & QC types'],
@@ -153,8 +153,8 @@ function Email({ d, ro, save, busy }) {
     {!ro && <button className="btn pri" disabled={busy} onClick={() => save({ a: 'daily', daily_summary_on: s.daily_summary_on === '1' ? 1 : 0, daily_summary_time: s.daily_summary_time || '19:30', daily_summary_cc: s.daily_summary_cc || '' })}>Save daily summary settings</button>}
     <p className="muted" style={{ fontSize: 12 }}>Last sent: {d.settings.daily_summary_last || '—'}. It goes out on the first visit to Q-TRACK after the set time. On shared hosting add a cPanel cron (every 15 min) for exact timing: <span className="mono" style={{ wordBreak: 'break-all' }}>wget -qO- "{d.settings.cron_url}"</span></p>
     <h2 className="mb mt">Email history</h2>
-    <table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>
-      {d.emails.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{String(e.subject).slice(0, 60)}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table></div>;
+    <Paged rows={d.emails} per={25} label="emails">{(pr) => <table className="t"><thead><tr><th>Recipient</th><th>Email</th><th>Subject</th><th>Sent</th><th>Status</th></tr></thead><tbody>
+      {pr.map((e) => <tr key={e.id}><td>{e.recipient_type}</td><td>{e.email}</td><td>{String(e.subject).slice(0, 60)}</td><td>{fdt(e.sent_at)}</td><td><Badge s={e.status} /></td></tr>)}</tbody></table>}</Paged></div>;
 }
 
 const LABEL = { qc_jobs: 'QC requests / jobs', qc_items: 'SKUs / inspections / reports', item_defects: 'Defect entries', item_photos: 'Inspection photos', attachments: 'Attachments (PO / spec files)',

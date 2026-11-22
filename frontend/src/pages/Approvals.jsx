@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Page } from '../app/Layout';
 import { useAuth } from '../app/auth';
 import { pdfUrl, post } from '../app/api';
-import { Badge, Empty, Loader, useAction, useApi, Thumb } from '../app/ui';
+import { Badge, Empty, Loader, useAction, useApi, Thumb, Paged } from '../app/ui';
 import { fdate, fdt, num } from '../app/util';
 
 export default function Approvals() {
@@ -45,10 +45,10 @@ export default function Approvals() {
               <p className="muted" style={{ fontSize: 12 }}>Decision, name &amp; time are printed on the PDF report and stored in the audit trail.</p></form>}
           </div>)}</div>}
       </div>
-      {!!d.history.length && <div className="card mt"><h2 className="mb">Recent decisions</h2><table className="t"><thead><tr><th>SKU / report</th><th>{r === 'vendor' ? 'Client' : 'Vendor'}</th><th>Type</th><th>Decision</th><th>Remark</th><th>When</th></tr></thead><tbody>
-        {d.history.map((x) => { const isC = x.concession_status && x.concession_status !== 'PENDING';
+      {!!d.history.length && <div className="card mt"><h2 className="mb">Recent decisions</h2><Paged rows={d.history} per={25} label="decisions">{(pr) => <table className="t"><thead><tr><th>SKU / report</th><th>{r === 'vendor' ? 'Client' : 'Vendor'}</th><th>Type</th><th>Decision</th><th>Remark</th><th>When</th></tr></thead><tbody>
+        {pr.map((x) => { const isC = x.concession_status && x.concession_status !== 'PENDING';
           return <tr key={x.id}><td className="mono">{x.report_no || x.sku}</td><td>{r === 'vendor' ? x.client_code : x.vendor_name}</td><td>{isC ? 'Concession' : `SKU hold (${x.hold_for})`}</td>
-            <td><Badge s={isC ? x.concession_status : x.hold_status} /></td><td>{isC ? x.concession_remark : x.hold_response}</td><td>{fdt(isC ? x.concession_at : x.hold_resp_at)}</td></tr>; })}</tbody></table></div>}
+            <td><Badge s={isC ? x.concession_status : x.hold_status} /></td><td>{isC ? x.concession_remark : x.hold_response}</td><td>{fdt(isC ? x.concession_at : x.hold_resp_at)}</td></tr>; })}</tbody></table>}</Paged></div>}
     </>}</Loader>
   </Page>;
 }

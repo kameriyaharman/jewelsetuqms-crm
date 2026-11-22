@@ -142,7 +142,7 @@ api('GET', 'reports', [...R_INT, 'client', 'vendor'], function () {
     if ($F['q']) { $sql .= ' AND (j.po_no LIKE ? OR i.sku LIKE ? OR i.report_no LIKE ?)'; array_push($p, "%{$F['q']}%", "%{$F['q']}%", "%{$F['q']}%"); }
     if ($F['from']) { $sql .= ' AND i.approved_at>=?'; $p[] = $F['from'] . ' 00:00:00'; }
     if ($F['to']) { $sql .= ' AND i.approved_at<=?'; $p[] = $F['to'] . ' 23:59:59'; }
-    $rows = all($sql . ' ORDER BY i.approved_at DESC LIMIT 500', $p);
+    $rows = all($sql . ' ORDER BY i.approved_at DESC LIMIT 5000', $p);
     $s = ['n' => count($rows), 'pass' => 0, 'fail' => 0, 'cond' => 0, 'insp' => 0, 'rej' => 0];
     foreach ($rows as $r) { $k = ['PASS' => 'pass', 'FAIL' => 'fail'][$r['final_result']] ?? 'cond'; $s[$k]++; $s['insp'] += $r['inspected_qty']; $s['rej'] += $r['rejected_qty']; }
     $s['rate'] = $s['insp'] ? $s['rej'] * 100 / $s['insp'] : 0;

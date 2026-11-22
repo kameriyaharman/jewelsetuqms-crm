@@ -776,3 +776,16 @@ html.has-cursor input, html.has-cursor textarea, html.has-cursor [contenteditabl
   .wa-fab { bottom: calc(84px + env(safe-area-inset-bottom)); right: 16px; width: 50px; height: 50px; }
 }
 @keyframes mctaIn { from { transform: translateY(100%); } }
+
+/* pagination (admin lists + Knowledge Hub) */
+.pager { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 12px 16px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line2); }
+.pager b { color: var(--navy); }
+.pager .pg-per { border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font-size: 12px; background: #fff; }
+.pager .pg-btns { display: flex; gap: 4px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.pager .pg-btns button { min-width: 32px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; }
+.pager .pg-btns button:hover:not([disabled]) { border-color: var(--gold); }
+.pager .pg-btns button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.pager .pg-btns button[disabled] { opacity: .45; pointer-events: none; }
+.pager .pg-btns i { font-style: normal; padding: 0 2px; }
+.pager.simple { border: 0; justify-content: center; padding: 28px 0 0; } .pager.simple .pg-btns { margin: 0; }
+.pager.simple .pg-btns button { padding: 8px 14px; border-radius: 9px; font-size: 13.5px; }
