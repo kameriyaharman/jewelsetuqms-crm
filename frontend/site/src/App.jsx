@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useSite } from './site';
-import { Header, Footer, WhatsAppFab, Spinner } from './components';
+import { Header, Footer, WhatsAppFab, MobileCta, Spinner } from './components';
 import { BookModal, ReportModal } from './modals';
 import { Cursor, useMotion } from './motion';
 import Home from './pages/Home';
@@ -27,6 +27,7 @@ function Public() {
     <main key={loc.pathname} className="page-in"><Outlet /></main>
     <Footer />
     <WhatsAppFab />
+    <MobileCta />
     {book && <BookModal />}
     {report && <ReportModal />}
   </>;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ArrowRight, CalendarPlus, Clock, LayoutGrid, Flame, Gem, ShieldCheck, LogIn, Mail, MapPin, Menu, MessageCircle, Phone, X } from 'lucide-react';
+import { ArrowRight, CalendarPlus, Clock, FileText, LayoutGrid, Flame, Gem, ShieldCheck, LogIn, Mail, MapPin, Menu, MessageCircle, Phone, X } from 'lucide-react';
 import { useSite, waLink, telLink, monYear, media } from './site';
 import { Logo } from './icons';
 
@@ -63,6 +63,16 @@ export function Footer() {
         {(b.credit_text ?? 'CustomE Solution') && <span className="credit">Designed &amp; Developed by <a href={b.credit_url || 'https://customesolution.com'} target="_blank" rel="noopener">{b.credit_text || 'CustomE Solution'}</a></span>}</div>
     </div>
   </footer>;
+}
+
+/** Mobile only: the two hero buttons pinned to the bottom of the screen */
+export function MobileCta() {
+  const { C, openBook, setReport, book, report } = useSite();
+  if (book || report) return null;
+  return <div className="mcta">
+    <button className="btn btn-gold" onClick={() => openBook()}><CalendarPlus />{C.home.cta_primary}</button>
+    <button className="btn btn-line" onClick={() => setReport(true)}><FileText />{C.home.cta_secondary}</button>
+  </div>;
 }
 
 export function WhatsAppFab() {
