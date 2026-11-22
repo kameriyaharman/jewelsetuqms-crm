@@ -40,7 +40,7 @@ export function Cursor() {
 /* elements that fade / slide in when scrolled into view (siblings get a small stagger) */
 const REVEAL = ['.sec-head', '.trace-head', '.pcard', '.acard', '.post', '.step', '.lot', '.tcard', '.navy-card', '.score', '.checks2 li', '.gate', '.gate-note',
   '.mcard', '.role', '.timeline li', '.cert', '.cta-band', '.feat', '.side-pdf', '.side-box', '.svc-title', '.svc-text', '.phero h1', '.phero .chips', '.qt-hero h1',
-  '.qt-hero p', '.qt-badge', '.ab-hero h1', '.ab-hero p', '.portrait', '.stats > div', '.hero-art', '.hero .ctas', '.hero .cities', '.hero p.lead', '.hero .eyebrow',
+  '.qt-hero p', '.qt-badge', '.ab-hero h1', '.ab-hero p', '.portrait', '.stats > div', '.hero .ctas', '.hero .cities', '.hero p.lead', '.hero .eyebrow',
   '.prose > div > *', '.magnet', '.toc', '.related .posts', '.verify', '.ftr .cols > div'].join(',');
 const SPOT = '.pcard, .post, .role, .tcard, .acard, .cert, .mcard, .feat, .score, .lot';
 const MAGNET = '.btn-gold, .btn-navy, .wa-fab, .hdr-cta .btn';
@@ -49,7 +49,7 @@ export function useMotion(key) {
   // scroll reveal
   useEffect(() => {
     if (reduced() || !('IntersectionObserver' in window)) return;
-    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.setAttribute('data-in', ''); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
     const scan = () => document.querySelectorAll(REVEAL).forEach((el) => {
       if (el.dataset.rv !== undefined || el.closest('.ovl, .mmenu')) return;
       const sib = el.parentElement ? [...el.parentElement.children].filter((c) => c.matches(REVEAL)) : [];

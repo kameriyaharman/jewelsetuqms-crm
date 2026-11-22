@@ -1,26 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarPlus, Check, CheckCircle2, FileText, MapPin, ScanLine, TrendingDown } from 'lucide-react';
+import { CalendarPlus, Check, CheckCircle2, FileText, MapPin, ScanLine } from 'lucide-react';
 import { get } from '../api';
 import { useSite, T } from '../site';
 import { Diamond, Icon } from '../icons';
 import { CountUp } from '../motion';
+import HeroArt from './HeroArt';
 import { ArrowLink, CtaBand, PostCard } from '../components';
-
-export function HeroArt({ badges = [] }) {
-  const pos = [{ left: '2%', top: '9%' }, { right: '0%', top: '6%' }, { left: '-2%', bottom: '20%' }, { right: '4%', bottom: '26%' }];
-  const ic = [<CheckCircle2 key="a" />, null, null, <TrendingDown key="d" style={{ color: 'var(--gold-d)' }} />];
-  return <div className="hero-art" aria-hidden="true">
-    <svg className="rings" viewBox="0 0 420 420" fill="none">
-      <circle cx="210" cy="210" r="205" stroke="#e8d6a8" strokeWidth="1" />
-      <circle className="spin" cx="210" cy="210" r="160" stroke="#e8d6a8" strokeDasharray="3 6" />
-      <circle cx="210" cy="210" r="118" stroke="#efe1bb" />
-      <path d="M5 210h410M210 5v410" stroke="#f1e6c8" strokeDasharray="2 8" />
-    </svg>
-    <Diamond className="dia" stroke="#c9a24a" w={1.6} />
-    {badges.slice(0, 4).map((b, i) => <div key={i} className="fbadge" style={pos[i]}><small>{b.label}</small><b>{ic[i]}{b.value}</b></div>)}
-  </div>;
-}
 
 export default function Home() {
   const { C, openBook, setReport } = useSite();
