@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ScanLine, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, ScanLine, ShieldCheck, Smartphone } from 'lucide-react';
 import { useSite, T } from '../site';
 import { Icon } from '../icons';
 import { ERP_LOGIN } from '../components';
@@ -16,6 +16,7 @@ export default function QTrack() {
         <ul>{(r.points || []).map((p) => <li key={p}><Check />{p}</li>)}</ul>
         <a className={'btn ' + (i === 0 ? 'btn-gold' : 'btn-navy')} href={ERP_LOGIN}>{r.button}<ArrowRight /></a>
       </div>)}</div>
+      <div className="qt-app"><a className="btn btn-navy" href={(import.meta.env.BASE_URL || '/') + 'downloads/jewelsetu-qtrack.apk'}><Smartphone />Download Q-Track Android app</a><span>For field auditors, vendors &amp; clients · Android 7+</span></div>
       <div className="qt-foot"><span><ShieldCheck />{Q.footnote}</span>
         <span>New buyer or vendor? <button onClick={() => openBook({ message: 'Please set up Q-Track portal access for our company.' })}>Request Q-Track onboarding →</button></span></div>
     </div>

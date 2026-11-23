@@ -33,6 +33,7 @@ export default function Login() {
       </form>
       <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>One login · 6 roles · routes to Internal, Client, Vendor portal or the Inspector app</p>
       <div className="roles">{['SUPER ADMIN', 'BACK OFFICE', 'QC MANAGER', 'INSPECTOR', 'CLIENT', 'VENDOR'].map((r) => <span key={r}>{r}</span>)}</div>
+      {!/JewelsetuQTrackApp/.test(navigator.userAgent) && <a className="btn block" style={{ marginTop: 14 }} href={(import.meta.env.BASE_URL || '/').replace(/erp\/?$/, '') + 'downloads/jewelsetu-qtrack.apk'}>📱 Download Android app (APK)</a>}
     </div></div>
   </div>;
 }

@@ -789,3 +789,4 @@ html.has-cursor input, html.has-cursor textarea, html.has-cursor [contenteditabl
 .pager .pg-btns i { font-style: normal; padding: 0 2px; }
 .pager.simple { border: 0; justify-content: center; padding: 28px 0 0; } .pager.simple .pg-btns { margin: 0; }
 .pager.simple .pg-btns button { padding: 8px 14px; border-radius: 9px; font-size: 13.5px; }
+.qt-app { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 28px; font-size: 13px; color: var(--muted); }

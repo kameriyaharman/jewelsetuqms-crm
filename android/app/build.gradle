@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+
+def run = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+android {
+    namespace 'com.jewelsetu.qtrack'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.jewelsetu.qtrack'
+        minSdk 24
+        targetSdk 35
+        versionCode run
+        versionName "1.0.${run}"
+    }
+    signingConfigs {
+        release {
+            storeFile file('../release.keystore')
+            storePassword System.getenv('KEYSTORE_PASSWORD') ?: 'jewelsetu-qtrack'
+            keyAlias 'qtrack'
+            keyPassword System.getenv('KEYSTORE_PASSWORD') ?: 'jewelsetu-qtrack'
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+}
