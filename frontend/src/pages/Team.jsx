@@ -6,25 +6,33 @@ import { post } from '../app/api';
 import { Badge, Empty, Icon, InspSt, Loader, Sel, useAction, useApi, useForm, useToast, Avatar, Paged } from '../app/ui';
 import { fdate, fdt, initials, today } from '../app/util';
 
-const TABS = [['internal', 'All staff'], ['inspector', 'Inspectors'], ['qc_manager', 'Managers'], ['back_office', 'Back office'], ['portal', 'Client / vendor logins']];
+const TABS = [['internal', 'All staff'], ['super_admin', 'Super admins'], ['inspector', 'Inspectors'], ['qc_manager', 'Managers'], ['back_office', 'Back office'], ['portal', 'Client / vendor logins'], ['all', 'Everyone']];
 const blank = { id: 0, role: 'inspector', name: '', emp_code: '', email: '', designation: '', client_id: '', vendor_id: '', phone: '', location: '', area: '', joined_on: '', status: 'ACTIVE', password: '' };
 
 export default function Team() {
   const { me } = useAuth(); const canEdit = me.user.role === 'super_admin';
-  const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'internal'; const id = sp.get('id'); const edit = sp.has('edit') || sp.has('new');
-  const q = useApi('team', { f, id }); const opts = useApi('options'); const F = useForm(blank); const { run, busy } = useAction();
+  const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'internal'; const id = sp.get('id'); const edit = sp.has('edit') || sp.has('new'); const st = sp.get('st') || '';
+  const q = useApi('team', { f, id, st }); const opts = useApi('options'); const F = useForm(blank); const { run, busy } = useAction();
   const sel = q.data?.sel;
   useEffect(() => { if (sp.has('new')) F.setF({ ...blank, role: f === 'portal' ? 'client' : 'inspector' }); else if (sel) F.setF({ ...blank, ...Object.fromEntries(Object.entries(sel).map(([k, v]) => [k, v ?? ''])), password: '' }); /* eslint-disable-next-line */ }, [sel?.id, sp.has('new')]);
   const save = async (e) => { e.preventDefault(); const r = await run(() => post('team/save', F.f)); if (r) { setSp({ f, id: r.id }); q.reload(); } };
   const b = F.bind;
+  const toggle = async (u, e) => { e?.stopPropagation(); const to = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    if (to === 'INACTIVE' && !confirm(`Deactivate ${u.name}? They will not be able to log in until activated again.`)) return;
+    if (await run(() => post('team/status', { id: u.id, status: to }))) q.reload(); };
+  const keep = (o) => { const n = { f, ...o }; if (st) n.st = st; return n; };
   return <Page title="Team Management" sub="Add team members with roles and areas; track completed jobs, report time, returns and approval rate"
     actions={canEdit && <button className="btn pri" onClick={() => setSp({ f, new: 1 })}><Icon n="plus" /> Add team member</button>}>
     <Loader q={q}>{(d) => <div className="grid g-73">
       <div className="card">
-        <div className="tabs">{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp({ f: k }); }}>{l}</a>)}</div>
-        <Paged rows={d.rows} per={25} label="logins" resetKey={f}>{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th>{d.show_pw && <th>Password</th>}<th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
-          {pr.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp({ f, id: u.id })}><td className="mono">{u.emp_code || u.email}</td>{d.show_pw && <td onClick={(e) => e.stopPropagation()}><Pw value={u.password} /></td>}
-            <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={u.name} photo={u.photo} size={30} />{u.name}</span></td><td><Badge s={u.role} label={d.roles[u.role]} /></td><td>{u.ccode || u.vname || u.location}</td><td>{u.last_login ? fdt(u.last_login) : '—'}</td><td>{u.live ? <InspSt st={u.live} small /> : <Badge s={u.status} />}</td></tr>)}
+        <div className="tabs">{TABS.map(([k, l]) => <a key={k} href="#" className={f === k ? 'on' : ''} onClick={(e) => { e.preventDefault(); setSp(st ? { f: k, st } : { f: k }); }}>{l}</a>)}</div>
+        <div className="actions" style={{ justifyContent: 'flex-start', margin: '0 0 10px' }}>{[['', 'All'], ['ACTIVE', 'Active · ' + (d.counts?.ACTIVE ?? '')], ['INACTIVE', 'Inactive · ' + (d.counts?.INACTIVE ?? '')]].map(([k, l]) =>
+          <button key={k} className={'btn sm' + (st === k ? ' pri' : '')} onClick={() => setSp(k ? { f, st: k } : { f })}>{l}</button>)}</div>
+        <Paged rows={d.rows} per={25} label="logins" resetKey={f + st}>{(pr) => <div className="tbl-wrap"><table className="t"><thead><tr><th>Employee ID / login</th>{d.show_pw && <th>Password</th>}<th>Name</th><th>Role</th><th>Location / link</th><th>Last login</th><th>Status</th></tr></thead><tbody>
+          {pr.map((u) => <tr key={u.id} className={'click ' + (sel?.id === u.id ? 'sel' : '')} onClick={() => setSp(keep({ id: u.id }))}><td className="mono">{u.emp_code || u.email}</td>{d.show_pw && <td onClick={(e) => e.stopPropagation()}><Pw value={u.password} /></td>}
+            <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={u.name} photo={u.photo} size={30} />{u.name}</span></td><td><Badge s={u.role} label={d.roles[u.role]} /></td><td>{u.ccode || u.vname || u.location}</td><td>{u.last_login ? fdt(u.last_login) : '—'}</td><td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{canEdit && u.id !== me.user.id
+              ? <button type="button" className={'tsw' + (u.status === 'ACTIVE' ? ' on' : '')} title={u.status === 'ACTIVE' ? 'Active — click to deactivate' : 'Inactive — click to activate'} disabled={busy} onClick={(e) => toggle(u, e)} />
+              : null}{u.live && u.status === 'ACTIVE' ? <InspSt st={u.live} small /> : <Badge s={u.status} />}</span></td></tr>)}
         </tbody></table></div>}</Paged>
         {!!d.perf.length && <><h2 className="mb mt">Team this month</h2><table className="t"><thead><tr><th>Inspector</th><th className="num">Done</th><th className="num">Avg time</th><th className="num">Return %</th><th className="num">1st-time approval</th></tr></thead><tbody>
           {d.perf.map((u) => <tr key={u.id}><td>{u.emp_code} {u.name.split(' ')[0]}</td><td className="num">{u.done}</td><td className="num">{u.avg.toFixed(1)} h</td><td className="num">{Math.round(u.ret)}%</td><td className="num">{Math.round(u.first)}%</td></tr>)}</tbody></table></>}
@@ -33,7 +41,8 @@ export default function Team() {
         {sel && !edit && sel.kpi && <div className="card"><div className="card-h"><h2>Inspector performance</h2><span>{sel.emp_code}</span></div>
           <div className="grid g3" style={{ gap: 8, textAlign: 'center' }}>{[['Assigned QC', sel.kpi.assigned], ['Completed', sel.kpi.done], ['Avg turnaround', sel.kpi.avg.toFixed(1) + ' h'], ['Return rate', Math.round(sel.kpi.ret) + '%'], ['First-time approval', Math.round(sel.kpi.first) + '%'], ['Pending', sel.kpi.pending]].map(([l, v]) =>
             <div key={l}><small>{l}</small><div className="big">{v}</div></div>)}</div></div>}
-        {sel && !edit ? <div className="card"><div className="card-h"><h2>Profile — {sel.emp_code || sel.name}</h2>{canEdit && <a href="#" onClick={(e) => { e.preventDefault(); setSp({ f, id: sel.id, edit: 1 }); }}>Edit</a>}</div>
+        {sel && !edit ? <div className="card"><div className="card-h"><h2>Profile — {sel.emp_code || sel.name}</h2>{canEdit && <span className="actions">{sel.id !== me.user.id && <button className={'btn sm ' + (sel.status === 'ACTIVE' ? 'ruby' : 'pri')} disabled={busy} onClick={() => toggle(sel)}>{sel.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button>}
+            <a href="#" onClick={(e) => { e.preventDefault(); setSp(keep({ id: sel.id, edit: 1 })); }}>Edit</a></span>}</div>
           <div className="kv"><div><small>Name</small><b>{sel.name}</b></div><div><small>Mobile</small><b>{sel.phone || '—'}</b></div><div><small>Email</small><b>{sel.email || '—'}</b></div>
             <div><small>Role</small><b>{d.roles[sel.role]}</b></div><div><small>Designation</small><b>{sel.designation || '—'}</b></div><div><small>Location</small><b>{sel.location || '—'}</b></div>
             <div><small>Joining date</small><b>{fdate(sel.joined_on)}</b></div><div><small>Assigned area</small><b>{sel.area || '—'}</b></div><div><small>Status</small><b><Badge s={sel.status} /></b></div></div>

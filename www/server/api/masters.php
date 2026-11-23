@@ -157,7 +157,9 @@ api('POST', 'mapping/save', ['super_admin'], function () {
 /* ----- team ----- */
 api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
     $f = (string)in_('f', 'internal');
-    $where = match ($f) { 'inspector' => "role='inspector'", 'qc_manager' => "role='qc_manager'", 'back_office' => "role='back_office'", 'portal' => "role IN ('client','vendor')", default => "role IN ('super_admin','back_office','qc_manager','inspector')" };
+    $where = match ($f) { 'inspector' => "role='inspector'", 'qc_manager' => "role='qc_manager'", 'back_office' => "role='back_office'", 'super_admin' => "role='super_admin'", 'portal' => "role IN ('client','vendor')", 'all' => '1=1', default => "role IN ('super_admin','back_office','qc_manager','inspector')" };
+    $st = (string)in_('st'); if (in_array($st, ['ACTIVE', 'INACTIVE'], true)) $where = "($where) AND u.status='$st'";
+    $counts = ['ACTIVE' => 0, 'INACTIVE' => 0]; foreach (all('SELECT status, COUNT(*) n FROM users GROUP BY status') as $c) $counts[$c['status']] = (int)$c['n'];
     $rows = all("SELECT u.id, u.name, u.email, u.emp_code, u.role, u.location, u.status, u.last_login, u.photo, c.code ccode, v.name vname FROM users u LEFT JOIN clients c ON c.id=u.client_id LEFT JOIN vendors v ON v.id=u.vendor_id WHERE $where ORDER BY u.role, u.emp_code, u.name");
     foreach ($rows as &$r) { $r['photo'] = $r['photo'] ? url('file', ['p' => $r['photo']]) : null; } unset($r);
     $perf = []; foreach (all("SELECT id, name, emp_code FROM users WHERE role='inspector' AND status='ACTIVE' ORDER BY emp_code") as $u) $perf[] = $u + inspector_kpis((int)$u['id'], date('Y-m-01'));
@@ -170,7 +172,7 @@ api('GET', 'team', ['super_admin', 'qc_manager', 'back_office'], function () {
         foreach ($rows as &$r) $r['password'] = pw_dec($enc[$r['id']] ?? null); unset($r);
         if ($sel) $sel['password'] = pw_dec($enc[$sel['id']] ?? null);
     }
-    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES, 'show_pw' => is_role('super_admin'), 'login_url' => (isset($_SERVER['HTTP_HOST']) ? ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] : '') . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php')), '/') . '/erp/login'];
+    return ['rows' => $rows, 'perf' => $perf, 'sel' => $sel, 'roles' => ROLES, 'counts' => $counts, 'show_pw' => is_role('super_admin'), 'login_url' => (isset($_SERVER['HTTP_HOST']) ? ((($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || !empty($_SERVER['HTTPS'])) ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] : '') . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php')), '/') . '/erp/login'];
 });
 api('POST', 'team/save', ['super_admin'], function () {
     $id = (int)in_('id'); $role = (string)in_('role');
@@ -190,6 +192,16 @@ api('POST', 'team/save', ['super_admin'], function () {
     else { if (empty($d['password_hash'])) { $pw = 'Js@' . rand(10000, 99999); $d = pw_fields($pw) + $d; $msg .= " Initial password: $pw"; } $d['created_at'] = now(); $id = insert('users', $d); }
     audit('user', $id, 'SAVE');
     return ['ok' => true, 'id' => $id, 'message' => $msg];
+});
+
+/** Super Admin: switch any login (staff, inspector, client, vendor) ACTIVE ⇄ INACTIVE. Inactive users cannot log in and are signed out on their next click. */
+api('POST', 'team/status', ['super_admin'], function () {
+    $id = (int)in_('id'); $st = in_('status') === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    $u = one('SELECT id, name, role, status FROM users WHERE id=?', [$id]); if (!$u) fail('User not found', 404);
+    if ($id === (int)user()['id']) fail('You cannot deactivate yourself.');
+    if ($st === 'INACTIVE' && $u['role'] === 'super_admin' && (int)val("SELECT COUNT(*) FROM users WHERE role='super_admin' AND status='ACTIVE' AND id<>?", [$id]) === 0) fail('At least one Super Admin must stay active.');
+    if ($u['status'] !== $st) { update('users', ['status' => $st], 'id=?', [$id]); audit('user', $id, $st === 'ACTIVE' ? 'ACTIVATED' : 'DEACTIVATED', 'status', $u['status'], $st); }
+    return ['ok' => true, 'status' => $st, 'message' => $u['name'] . ($st === 'ACTIVE' ? ' is active — can log in again.' : ' is deactivated — login blocked.')];
 });
 
 /* ----- settings / masters ----- */
