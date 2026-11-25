@@ -2,17 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Award, BadgeCheck, Box, CheckCircle2, ChevronDown, ClipboardList, Cog, Download, ExternalLink, Eye, Factory, FileText, Gem, LogIn, MapPin,
-  Network, Presentation, Quote, Search, ShieldCheck, Sparkle, Star, UserCheck, Clock,
+  Network, Presentation, Zap, WandSparkles, Microscope, TrendingUp, Quote, Search, ShieldCheck, Sparkle, Star, UserCheck, Clock,
 } from 'lucide-react';
 import { get } from '../api';
 import { useSite, waLink } from '../site';
 import { WaIcon } from '../components';
 import { ERP_LOGIN } from '../gx';
 import {
-  HERO, CERTS, CASES, TESTIMONIALS, SERVICES, METHOD, PILLARS, QSTEPS, PORTALS, DOC_TABS, DOCS, POST_TABS, FALLBACK_POSTS, FOUNDER, FAQS, LOTS, AQLS, aqlPlan,
+  HERO, CERTS, CASES, TESTIMONIALS, SERVICES, METHOD, PILLARS, QSTEPS, PORTALS, DOC_TABS, DOCS, POST_TABS, FALLBACK_POSTS, FOUNDER, FAQS, LOTS, AQLS, aqlPlan, ADV,
 } from '../gx-content';
 
-const ICO = { gem: Gem, award: Award, usercheck: UserCheck, badgecheck: BadgeCheck, shield: ShieldCheck, package: Box, cogs: Cog, search: Search, factory: Factory, network: Network, teach: Presentation };
+const ICO = { gem: Gem, award: Award, usercheck: UserCheck, badgecheck: BadgeCheck, shield: ShieldCheck, package: Box, cogs: Cog, search: Search, factory: Factory, network: Network, teach: Presentation, zap: Zap, wand: WandSparkles, micro: Microscope, trend: TrendingUp };
 const I = ({ n, ...p }) => { const C = ICO[n] || Sparkle; return <C {...p} />; };
 const pad = (i) => String(i + 1).padStart(2, '0');
 
@@ -93,6 +93,16 @@ export default function Home() {
         <span className="gx-eb">Certified Global Standards &amp; Accreditations</span>
         <div className="row">{CERTS.map(([ic, t]) => <div key={t}><I n={ic} />{t}</div>)}</div>
       </div></div>
+    </section>
+
+    {/* 4 CORE ADVANTAGE PILLARS */}
+    <section className="gx-sec white" id="advantages">
+      <div className="gx-wrap">
+        <div className="gx-head center" data-reveal><span className="gx-eb">Transforming Quality into Competitive Advantage</span><h2>The 4 Core Advantage Pillars of Jewelsetu</h2>
+          <p>Engineered to make third-party inspection and factory quality management seamless for global buyers and manufacturers.</p></div>
+        <div className="gx-adv">{ADV.map(([ic, t, d], i) => <div key={t} className={'gx-card adv' + (i % 2 ? ' hl' : '')} data-reveal>
+          <span className="ic"><I n={ic} /></span><small>Pillar {pad(i)}</small><h3>{t}</h3><p>{d}</p></div>)}</div>
+      </div>
     </section>
 
     {/* TRACK RECORD */}

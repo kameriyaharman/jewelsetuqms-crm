@@ -138,3 +138,10 @@ export function aqlPlan(lotIdx, zero) {
   const ac = AC[Math.min(i - zero - 3, AC.length - 1)];
   return { letter, n: N[i], ac, re: ac + 1 };
 }
+
+export const ADV = [
+  ['zap', 'Efficient', 'Optimizing production workflows and real-time communication to ensure faster shipment delivery without compromising excellence.'],
+  ['wand', 'Painless', 'One point of contact, simple online booking and live Q-TRACK updates, so quality control never becomes a headache for your buying or production team.'],
+  ['micro', 'Thorough', 'Deep-dive 10x loupe inspections, XRF assays, and data-backed root cause analysis to eliminate defects at every stage of manufacturing.'],
+  ['trend', 'Cost Effective', 'Protecting your margins by reducing rework, gold dust loss, and overseas recalls through early-stage quality intervention and Lean practices.'],
+];
