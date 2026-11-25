@@ -2,8 +2,8 @@
 export const TOPBAR = { left: 'Independent Third-Party Jewelry QA • India', cities: 'Jaipur • Mumbai (SEEPZ) • Surat • Delhi NCR' };
 
 export const GNAV = [
-  ['/', 'Home'], ['/#impact', 'Client Impact'], ['/#services', 'Services'], ['/#manuals', 'Manuals & PDFs'],
-  ['/#qtrack', 'Q-Track Portal', true], ['/#faqs', 'FAQs'], ['/#insights', 'Knowledge Hub'], ['/#about', 'About'],
+  ['/', 'Home'], ['/#advantages', 'Why Jewelsetu'], ['/#impact', 'Client Impact'], ['/#services', 'Services'], ['/#manuals', 'Manuals & PDFs'],
+  ['/#qtrack', 'Q-Track Portal', true], ['/#faqs', 'FAQs'], ['/#about', 'About'],
 ];
 
 export const HERO = {
@@ -141,7 +141,9 @@ export function aqlPlan(lotIdx, zero) {
 
 export const ADV = [
   ['zap', 'Efficient', 'Optimizing production workflows and real-time communication to ensure faster shipment delivery without compromising excellence.'],
-  ['wand', 'Painless', 'One point of contact, simple online booking and live Q-TRACK updates, so quality control never becomes a headache for your buying or production team.'],
+  ['wand', 'Painless', 'A hassle-free digital quality support system via Q-TRACK designed to remove complexity and friction from your daily operations.'],
   ['micro', 'Thorough', 'Deep-dive 10x loupe inspections, XRF assays, and data-backed root cause analysis to eliminate defects at every stage of manufacturing.'],
   ['trend', 'Cost Effective', 'Protecting your margins by reducing rework, gold dust loss, and overseas recalls through early-stage quality intervention and Lean practices.'],
 ];
+
+export const STATS = [['down', '85', '%', 'Defect Rate Gap Reduction'], ['up', '12', '×', 'Digital Audit Efficiency'], ['', '99.9', '%', 'XRF & Hallmark Purity Assurance'], ['', '500', '+', 'Compliance & Lot Audits']];

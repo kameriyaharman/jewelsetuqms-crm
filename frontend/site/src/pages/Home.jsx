@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Award, BadgeCheck, Box, CheckCircle2, ChevronDown, ClipboardList, Cog, Download, ExternalLink, Eye, Factory, FileText, Gem, LogIn, MapPin,
-  Network, Presentation, Zap, WandSparkles, Microscope, TrendingUp, Quote, Search, ShieldCheck, Sparkle, Star, UserCheck, Clock,
+  Network, Presentation, ArrowDown, ArrowUp, Zap, WandSparkles, Microscope, TrendingUp, Quote, Search, ShieldCheck, Sparkle, Star, UserCheck, Clock,
 } from 'lucide-react';
 import { get } from '../api';
 import { useSite, waLink } from '../site';
 import { WaIcon } from '../components';
+import { CountUp } from '../motion';
 import { ERP_LOGIN } from '../gx';
 import {
-  HERO, CERTS, CASES, TESTIMONIALS, SERVICES, METHOD, PILLARS, QSTEPS, PORTALS, DOC_TABS, DOCS, POST_TABS, FALLBACK_POSTS, FOUNDER, FAQS, LOTS, AQLS, aqlPlan, ADV,
+  HERO, CERTS, CASES, TESTIMONIALS, SERVICES, METHOD, PILLARS, QSTEPS, PORTALS, DOC_TABS, DOCS, POST_TABS, FALLBACK_POSTS, FOUNDER, FAQS, LOTS, AQLS, aqlPlan, ADV, STATS,
 } from '../gx-content';
 
 const ICO = { gem: Gem, award: Award, usercheck: UserCheck, badgecheck: BadgeCheck, shield: ShieldCheck, package: Box, cogs: Cog, search: Search, factory: Factory, network: Network, teach: Presentation, zap: Zap, wand: WandSparkles, micro: Microscope, trend: TrendingUp };
@@ -87,12 +88,10 @@ export default function Home() {
       </div>
     </section>
 
-    {/* CERTIFICATIONS */}
-    <section className="gx-sec pt0">
-      <div className="gx-wrap"><div className="gx-card gx-certs" data-reveal>
-        <span className="gx-eb">Certified Global Standards &amp; Accreditations</span>
-        <div className="row">{CERTS.map(([ic, t]) => <div key={t}><I n={ic} />{t}</div>)}</div>
-      </div></div>
+    {/* STATS BAND */}
+    <section className="gx-stats">
+      <div className="gx-wrap">{STATS.map(([dir, v, suf, l]) => <div key={l} data-reveal>
+        <b>{dir === 'down' ? <ArrowDown /> : dir === 'up' ? <ArrowUp /> : null}<CountUp value={v} />{suf}</b><small>{l}</small></div>)}</div>
     </section>
 
     {/* 4 CORE ADVANTAGE PILLARS */}
@@ -103,6 +102,14 @@ export default function Home() {
         <div className="gx-adv">{ADV.map(([ic, t, d], i) => <div key={t} className={'gx-card adv' + (i % 2 ? ' hl' : '')} data-reveal>
           <span className="ic"><I n={ic} /></span><small>Pillar {pad(i)}</small><h3>{t}</h3><p>{d}</p></div>)}</div>
       </div>
+    </section>
+
+    {/* CERTIFICATIONS */}
+    <section className="gx-sec gx-certsec">
+      <div className="gx-wrap"><div className="gx-card gx-certs" data-reveal>
+        <span className="gx-eb">Certified Global Standards &amp; Accreditations</span>
+        <div className="row">{CERTS.map(([ic, t]) => <div key={t}><I n={ic} />{t}</div>)}</div>
+      </div></div>
     </section>
 
     {/* TRACK RECORD */}
