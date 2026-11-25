@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { SiteProvider } from './site';
 import App from './App';
 import './site.css';
+import './gx.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

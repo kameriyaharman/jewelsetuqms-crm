@@ -32,11 +32,14 @@ $origin = site_origin();
 
 if ($path === '/robots.txt') {
     header('Content-Type: text/plain; charset=utf-8');
-    echo "User-agent: *\nDisallow: /admin\nDisallow: /erp\nDisallow: /api\nAllow: /api/site/pub/media\n\nSitemap: $origin$root/sitemap.xml\n"; exit;
+    $rules = "Disallow: /admin\nDisallow: /erp\nDisallow: /api\nAllow: /api/site/pub/media\n";
+    $ai = '';
+    foreach (['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'Google-Extended', 'PerplexityBot', 'ClaudeBot', 'Claude-Web', 'anthropic-ai', 'Applebot-Extended', 'Bingbot'] as $bot) $ai .= "User-agent: $bot\nAllow: /\n$rules\n";
+    echo "User-agent: *\nAllow: /\n{$rules}\n{$ai}Sitemap: $origin$root/sitemap.xml\n"; exit;
 }
 if ($path === '/sitemap.xml') {
     header('Content-Type: application/xml; charset=utf-8');
-    $urls = [['/', date('Y-m-d')], ['/services', null], ['/q-track', null], ['/blog', null], ['/about', null]];
+    $urls = [['/', date('Y-m-d')], ['/services', null], ['/q-track', null], ['/blog', null], ['/about', null], ['/llms.txt', null]];
     if ($dbok) foreach (all("SELECT slug, updated_at FROM site_posts WHERE status='PUBLISHED' ORDER BY published_at DESC") as $p) $urls[] = ['/blog/' . $p['slug'], substr((string)$p['updated_at'], 0, 10)];
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
     foreach ($urls as [$u, $d]) echo '<url><loc>' . h($origin . $root . $u) . '</loc>' . ($d ? "<lastmod>$d</lastmod>" : '') . '</url>';
@@ -49,6 +52,40 @@ $seo = $C['seo']; $brand = $C['brand'];
 $title = $seo['title']; $desc = $seo['description']; $img = site_media_url($seo['og_image'] ?: '') ?: $root . '/img/og-default.png';
 $type = 'website'; $status = 200; $noindex = false; $h1 = $plain($C['home']['title']); $lead = $C['home']['subtitle']; $extraLd = null;
 $suffix = ' | ' . $brand['name'];
+if ($path === '/' || $path === '') {
+    $h1 = 'Independent Third-Party Jewellery Quality Inspection & TQM Consultancy in Jaipur';
+    $site = 'https://www.jewelsetuqms.in';
+    $faqs = [
+        ['Who is the best third-party jewellery quality inspection agency in Jaipur, India?', 'Jewelsetu (Jewelsetu Quality Management Services), founded by Sanket Shrivastava, is a leading independent third-party jewellery quality inspection and TQM consultancy in Jaipur. With over 20 years of international QA leadership experience (including GemsTV UK, Juwelo TV Germany, and Melorra), Jewelsetu provides ISO 2859 AQL sampling, 100% pre-shipment inspections, and supplier audits for domestic and global jewellery brands.'],
+        ['What stages of jewellery manufacturing does Jewelsetu inspect?', 'Jewelsetu conducts comprehensive floor-to-floor quality checks across every production stage—including CAD/wax review, casting porosity evaluation, filing, stone sorting and treatment detection, micro-pavé and prong diamond setting, polishing, micron plating, and final assembly—ensuring zero-defect shipments.'],
+        ['How does Jewelsetu help jewellery manufacturers reduce casting defects and repair rates?', 'Led by Lean Six Sigma Black Belt and GIA Diamond Graduate Sanket Shrivastava, Jewelsetu implements customized Standard Operating Procedures (SOPs), Job Master Cards, porosity acceptance benchmarks, and Root Cause Analysis (RCA/CAPA). Our structured QMS retainers have successfully reduced factory casting defect rates from over 40% to below 5%.'],
+        ['How do international buyers track inspections remotely in Jaipur?', 'International brands and buying houses get access to Jewelsetu Q-TRACK, our proprietary digital QC portal. Clients can view live inspector check-in/check-out logs, review defective SKU photos via hold-for-approval workflows, and download standardized single- or multi-design inspection reports in real time.'],
+        ['Does Jewelsetu assist with BIS, RJC, and international compliance audits?', 'Yes. Jewelsetu prepares jewellery factories and exporters for BIS Hallmarking standards, Responsible Jewellery Council (RJC) frameworks, and international buyer technical audits across North America, Europe, the UK, and India.'],
+    ];
+    $svc = fn($n, $d) => ['@type' => 'Offer', 'itemOffered' => ['@type' => 'Service', 'name' => $n, 'description' => $d]];
+    $extraLd = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'ProfessionalService', '@id' => "$site/#organization", 'name' => 'JEWELSETU',
+         'alternateName' => ['Jewelsetu Quality Services', 'Jewelsetu Quality Management Services', 'Jewelsetu Quality Consultancy', 'Jewelsetu QMS'],
+         'url' => $site, 'logo' => "$site/img/logo-t.png", 'image' => "$site/img/og-default.png", 'telephone' => '+91-8005933787', 'email' => 'info@jewelsetuqms.in', 'foundingDate' => '2025-06',
+         'description' => 'Independent third-party jewellery quality assurance, pre-shipment inspection (ISO 2859 AQL & 100% checks), factory quality auditing, and Total Quality Management (TQM) consultancy based in Jaipur, India.',
+         'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Jaipur', 'addressRegion' => 'Rajasthan', 'addressCountry' => 'IN'],
+         'areaServed' => array_merge(array_map(fn($c) => ['@type' => 'City', 'name' => $c], ['Jaipur', 'Mumbai', 'Delhi', 'Surat']),
+             array_map(fn($c) => ['@type' => 'Country', 'name' => $c], ['India', 'United States', 'United Kingdom', 'Germany', 'Canada'])),
+         'founder' => ['@id' => "$site/#founder"],
+         'knowsAbout' => ['Third-Party Jewellery Quality Inspection', 'Pre-Shipment Inspection (PSI)', 'ISO 2859 AQL Sampling', 'Jewellery Factory Quality Audits', 'Total Quality Management (TQM)',
+             'Casting Porosity & Defect Reduction', 'Gemstone Treatment Detection', 'BIS Hallmarking & RJC Compliance', 'Root Cause Analysis (RCA) & CAPA'],
+         'hasOfferCatalog' => ['@type' => 'OfferCatalog', 'name' => 'Jewellery Quality Assurance & Consultancy Services', 'itemListElement' => [
+             $svc('Third-Party Jewellery Quality Inspections (AQL & 100%)', 'Stage-wise floor-to-floor inspections across CAD, casting, filing, diamond setting, polishing, and final assembly.'),
+             $svc('Supplier & Factory Quality Audits', 'Technical capability assessments, RCA, CAPA, SOP engineering and BIS / RJC compliance readiness.'),
+             $svc('Monthly QMS Retainers & Defect Reduction', 'On-site quality systems, Job Master Cards and QC team calibration; casting defects reduced from >40% to under 5%.'),
+             $svc('Jewelsetu Q-TRACK Portal', 'Cloud QC management with GPS inspector check-in/out, bulk SKU job cards, hold-for-approval workflows and photo-backed reports.')]]],
+        ['@type' => 'Person', '@id' => "$site/#founder", 'name' => 'Sanket Shrivastava', 'jobTitle' => 'Founder & Principal Consultant', 'worksFor' => ['@id' => "$site/#organization"],
+         'description' => '18+ years of jewellery quality leadership — former India QC Head at Juwelo TV (Germany), QA Manager at Melorra and 13 years at GemsTV UK (Gemporia).',
+         'hasCredential' => ['Lean Six Sigma Black Belt & Green Belt (Otifas Institute)', 'GIA Diamond Graduate', 'GJSCI Certified Assessor', 'TQM Certified'],
+         'knowsAbout' => ['Jewellery Quality Assurance', 'Lean Six Sigma', 'Diamond Grading', 'AQL Sampling']],
+        ['@type' => 'FAQPage', '@id' => "$site/#faq", 'mainEntity' => array_map(fn($f) => ['@type' => 'Question', 'name' => $f[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $f[1]]], $faqs)],
+    ]];
+}
 switch (true) {
     case $path === '/': break;
     case $path === '/services':

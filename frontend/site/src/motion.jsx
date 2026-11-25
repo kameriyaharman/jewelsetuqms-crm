@@ -59,7 +59,7 @@ export function Cursor() {
 const REVEAL = ['.sec-head', '.trace-head', '.pcard', '.acard', '.post', '.step', '.lot', '.tcard', '.navy-card', '.score', '.checks2 li', '.gate', '.gate-note',
   '.mcard', '.role', '.timeline li', '.cert', '.cta-band', '.feat', '.side-pdf', '.side-box', '.svc-title', '.svc-text', '.phero h1', '.phero .chips', '.qt-hero h1',
   '.qt-hero p', '.qt-badge', '.ab-hero h1', '.ab-hero p', '.portrait', '.stats > div', '.hero .ctas', '.hero .cities', '.hero p.lead', '.hero .eyebrow',
-  '.prose > div > *', '.magnet', '.toc', '.related .posts', '.verify', '.ftr .cols > div'].join(',');
+  '.prose > div > *', '[data-reveal]', '.magnet', '.toc', '.related .posts', '.verify', '.ftr .cols > div'].join(',');
 const SPOT = '.pcard, .post, .role, .tcard, .acard, .cert, .mcard, .feat, .score, .lot';
 const MAGNET = '.btn-gold, .btn-navy, .wa-fab, .hdr-cta .btn';
 

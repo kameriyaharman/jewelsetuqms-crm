@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useSite } from './site';
-import { Header, Footer, WhatsAppFab, MobileCta, Spinner } from './components';
+import { WhatsAppFab, MobileCta, Spinner } from './components';
+import { GxHeader, GxFooter } from './gx';
 import { BookModal, ReportModal } from './modals';
 import { Cursor, useMotion } from './motion';
 import Home from './pages/Home';
@@ -19,13 +20,14 @@ function Public() {
   const loc = useLocation();
   useEffect(() => { if (new URLSearchParams(loc.search).get('preview') === 'qc-report') setReport(true); }, [loc.search]); // eslint-disable-line
   useEffect(() => { if (!loc.hash) window.scrollTo(0, 0); }, [loc.pathname]);
+  useEffect(() => { if (loc.hash) { const el = document.getElementById(loc.hash.slice(1)); if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth' }), 80); } }, [loc.hash]);
   useMotion(loc.pathname);
   if (!C) return <Spinner />;
   return <>
     <Cursor />
-    <Header />
+    <GxHeader />
     <main key={loc.pathname} className="page-in"><Outlet /></main>
-    <Footer />
+    <GxFooter />
     <WhatsAppFab />
     <MobileCta />
     {book && <BookModal />}

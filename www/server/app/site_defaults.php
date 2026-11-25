@@ -22,8 +22,8 @@ return [
         'credit_url' => 'https://customesolution.com',
     ],
     'seo' => [
-        'title' => 'JEWELSETU — Jewellery Quality Inspections, Factory Audits & QMS | Jaipur',
-        'description' => 'Independent third-party jewellery inspections (DUPRO, PSI, AQL), factory & compliance audits, Lean QMS retainers and GJSCI-aligned training for buying houses, exporters and retail brands.',
+        'title' => 'JEWELSETU | Independent Third-Party Jewellery Quality Inspection & TQM Consultancy in Jaipur',
+        'description' => 'Independent third-party jewellery quality assurance, pre-shipment inspection (ISO 2859 AQL & 100% checks), factory quality auditing, and Total Quality Management (TQM) consultancy based in Jaipur, India. Founded by Sanket Shrivastava.',
         'og_image' => '',
         'ga_id' => '',
     ],

@@ -70,8 +70,8 @@ export function MobileCta() {
   const { C, openBook, setReport, book, report } = useSite();
   if (book || report) return null;
   return <div className="mcta">
-    <button className="btn btn-gold" onClick={() => openBook()}><CalendarPlus />{C.home.cta_primary}</button>
-    <button className="btn btn-line" onClick={() => setReport(true)}><FileText />{C.home.cta_secondary}</button>
+    <button className="btn btn-gold" onClick={() => openBook()}><CalendarPlus />Request Inspection Quote</button>
+    <button className="btn btn-line" onClick={() => setReport(true)}><FileText />View Sample QC Report</button>
   </div>;
 }
 
