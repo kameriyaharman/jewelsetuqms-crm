@@ -18,6 +18,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.view.View;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -60,6 +61,23 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_main);
+        // Android 15 draws apps edge-to-edge: keep the page below the status bar and above the navigation bar / keyboard
+        View root = findViewById(android.R.id.content);
+        root.setOnApplyWindowInsetsListener((v, ins) -> {
+            int top, bottom, left, right;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets b = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                android.graphics.Insets k = ins.getInsets(WindowInsets.Type.ime());
+                top = b.top; left = b.left; right = b.right; bottom = Math.max(b.bottom, k.bottom);
+            } else { top = ins.getSystemWindowInsetTop(); bottom = ins.getSystemWindowInsetBottom(); left = ins.getSystemWindowInsetLeft(); right = ins.getSystemWindowInsetRight(); }
+            v.setPadding(left, top, right, bottom);
+            // brand colour behind the status bar, white behind the navigation bar
+            android.graphics.drawable.LayerDrawable bg = new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{
+                new android.graphics.drawable.ColorDrawable(0xFFFFFFFF), new android.graphics.drawable.ColorDrawable(0xFF0F3D45)});
+            if (Build.VERSION.SDK_INT >= 23) { bg.setLayerGravity(1, android.view.Gravity.TOP | android.view.Gravity.FILL_HORIZONTAL); bg.setLayerHeight(1, top); }
+            v.setBackground(bg);
+            return ins;
+        });
         web = findViewById(R.id.web); progress = findViewById(R.id.progress); offline = findViewById(R.id.offline); swipe = findViewById(R.id.swipe);
         findViewById(R.id.retry).setOnClickListener(v -> { offline.setVisibility(View.GONE); web.reload(); });
 
@@ -72,7 +90,9 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setBuiltInZoomControls(true);
+        s.setTextZoom(100);                 // ignore the phone's large-font setting — the layout is already mobile-sized
+        s.setSupportZoom(false);            // no accidental zoom-in on the login form
+        s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
         s.setSupportMultipleWindows(false);   // target=_blank opens in the same view (PDFs then download)
         s.setUserAgentString(s.getUserAgentString() + " JewelsetuQTrackApp/" + BuildConfigHelper.version(this));

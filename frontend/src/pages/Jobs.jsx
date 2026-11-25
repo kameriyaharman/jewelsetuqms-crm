@@ -15,7 +15,7 @@ export default function Jobs() {
   const isSA = me.user.role === 'super_admin'; const canPick = (j) => isSA || BULK.includes(j.status);
   const [sp, setSp] = useSearchParams(); const f = sp.get('f') || 'ALL'; const qs = sp.get('q') || '';
   const q = useApi('jobs', { f, q: qs });
-  const [search, setSearch] = useState(qs); const [pick, setPick] = useState(new Set()); const [del, setDel] = useState(null); const [bulk, setBulk] = useState({ inspector_id: '', date: '' });
+  const [search, setSearch] = useState(qs); const [pick, setPick] = useState(new Set()); const [del, setDel] = useState(null); const [bulk, setBulk] = useState({ inspector_id: '', inspector2_id: '', date: '' });
   const [lot, setLot] = useState(null); const { run, busy } = useAction();
   useEffect(() => { setPick(new Set()); }, [f, qs]);
   const go = (o) => { const n = { f, ...(qs ? { q: qs } : {}), ...o }; Object.keys(n).forEach((k) => !n[k] && delete n[k]); setSp(n); };
@@ -42,6 +42,7 @@ export default function Jobs() {
         {qs && <p className="muted" style={{ margin: '0 0 8px', fontSize: 12.5 }}>Showing {d.rows.length} job card(s) for “<b>{qs}</b>” · <a href="#" onClick={(e) => { e.preventDefault(); setSearch(''); go({ q: '' }); }}>clear</a></p>}
         {canAssign && pick.size > 0 && <div className="bulkbar"><b>{pick.size} job(s) selected</b>
           <Sel value={bulk.inspector_id} onChange={(v) => setBulk({ ...bulk, inspector_id: v })} options={d.inspectors.map((i) => [i.id, `${i.emp_code} · ${i.name}`])} blank="Select inspector" />
+          <Sel value={bulk.inspector2_id || ''} onChange={(v) => setBulk({ ...bulk, inspector2_id: v })} options={d.inspectors.filter((i) => String(i.id) !== String(bulk.inspector_id)).map((i) => [i.id, `${i.emp_code} · ${i.name}`])} blank="+ 2nd inspector (optional)" />
           <input type="date" value={bulk.date} onChange={(e) => setBulk({ ...bulk, date: e.target.value })} title="QC date (optional)" />
           <button className="btn gold" disabled={busy || !bulk.inspector_id} onClick={doBulk}>ASSIGN SELECTED ({pick.size} JOBS)</button>
           <button className="btn" style={{ background: '#fff', color: 'var(--ruby)', borderColor: '#fff' }} disabled={busy} onClick={doUnassign}>UNASSIGN SELECTED</button>
@@ -93,7 +94,7 @@ function AssignPanel({ id, onDone }) {
         <b> {t.emp_code} · {t.name}</b> <span style={{ float: 'right' }}><InspSt st={t.st} small /></span>
         <small>{t.location} · {t.st.sub}{t.near ? ' · near vendor' : ''}</small></label>)}</div>
       {!F.f.inspector_id && d.job.inspector_id && !d.unassign_ok && d.is_sa && <label className="chk f" style={{ color: 'var(--ruby)' }}><input type="checkbox" checked={F.f.force} onChange={(e) => F.set('force', e.target.checked)} /> I understand — force unassign although inspection has started</label>}
-      {d.split && d.skus > 1 && <div className="f"><label>Split job across 2 inspectors ({d.skus} SKUs) — second inspector</label>
+      {d.split && <div className="f"><label>Second inspector (2 inspectors on this job){d.skus > 1 ? ` · ${d.skus} SKUs` : ""}</label>
         <Sel value={F.f.inspector2_id} onChange={(v) => F.set('inspector2_id', v)} options={d.team.map((t) => [t.id, `${t.emp_code} · ${t.name}`])} blank="— no split —" /></div>}
       <label>Notify</label><label className="chk">✓ Inspector — app notification</label>
       <label className="chk f"><input type="checkbox" checked={F.f.notify_vendor} onChange={(e) => F.set('notify_vendor', e.target.checked)} /> Vendor — gate entry notice</label>

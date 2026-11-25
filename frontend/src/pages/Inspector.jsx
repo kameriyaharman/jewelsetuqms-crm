@@ -19,6 +19,7 @@ export function AppHome() {
     <Loader q={q}>{(d) => { const res = search ? d.skus.filter((s) => s.sku.toUpperCase().includes(search.toUpperCase())) : [];
       return <>
         <div className="mhello">{greet},<b>{me.user.name.split(' ')[0]} · {me.user.emp_code}</b></div>
+        <AttCard d={d} reload={q.reload} />
         <div className="mstats"><div><b>{String(d.today).padStart(2, '0')}</b><small>Today's QC</small></div><div><b>{String(d.pending).padStart(2, '0')}</b><small>Pending SKUs</small></div><div><b>{d.completed}</b><small>Completed</small></div></div>
         <p className="muted" style={{ fontSize: 12, margin: '-4px 0 12px' }}><span style={{ color: online ? 'var(--ok)' : 'var(--warn)' }}>●</span> {online ? 'ONLINE' : 'OFFLINE'} · {syncMsg}
           {qn > 0 && <> · <b>{qn}</b> pending upload <a href="#" onClick={async (e) => { e.preventDefault(); const n = await flushQueue(); setSyncMsg(n ? `synced ${n} change(s) ✓` : 'synced'); q.reload(); }}>sync now</a></>}</p>
@@ -26,11 +27,11 @@ export function AppHome() {
         <div className="mcard"><b>Search design / SKU</b>
           <div className="mt" style={{ display: 'flex', gap: 8 }}><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search SKU / design no." /></div>
           <div className="mlist">{search && (res.length ? res.map((s) => <Link key={s.id} to={'/app/inspect/' + s.id}><span className="mitem"><Thumb src={s.img} size={40} /><span><b>{s.sku}</b><small>{s.product} · {s.ready_qty} pcs · {s.job_no}</small></span></span><Badge s={s.status} /></Link>) : <Empty>No matching SKU in your jobs.</Empty>)}</div></div>
-        {(d.groups || []).length > 0 && <HomeCheckIn d={d} reload={q.reload} />}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '6px 0 10px' }}><h3 style={{ fontSize: 14, margin: 0 }}>My assigned QC</h3>
-          <div className="seg"><button className={view === 'vendor' ? 'on' : ''} onClick={() => pickView('vendor')}>🏭 Vendor-wise</button><button className={view === 'job' ? 'on' : ''} onClick={() => pickView('job')}>Job-wise</button></div></div>
+          <div className="seg"><button className={view === 'vendor' ? 'on' : ''} onClick={() => pickView('vendor')}>🏭 Vendor-wise</button><button className={view === 'po' ? 'on' : ''} onClick={() => pickView('po')}>PO-wise</button><button className={view === 'job' ? 'on' : ''} onClick={() => pickView('job')}>Job-wise</button></div></div>
         {!d.jobs.length && <div className="mcard"><Empty>No QC jobs assigned right now.</Empty></div>}
         {view === 'vendor' && (d.groups || []).map((g) => <VendorFolder key={g.key} g={g} />)}
+        {view === 'po' && poGroups(d.jobs).map((p) => <PoFolder key={p.key} p={p} />)}
         {view === 'job' && d.jobs.map((j) => { const ret = +j.ret, view = !ret && +j.done === +j.skus; return <div key={j.id} className="mcard">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}><span className="mitem"><Thumb src={j.img} size={48} /><b>{j.client_code} – {j.vendor_name.toUpperCase()}</b></span><Badge s={ret ? 'RETURNED' : j.status} /></div>
           <p className="muted" style={{ margin: '6px 0 10px', fontSize: 12.5 }}>{fdate(j.scheduled_date)} · {j.time_slot} · {j.skus} SKU · {j.location}<br />PO {j.po_no} · {j.job_no} · {j.done}/{j.skus} submitted
@@ -41,34 +42,82 @@ export function AppHome() {
   </MPage>;
 }
 
+/** PO-wise: one card per PO number (a PO can span many job cards / designs). */
+function poGroups(jobs) {
+  const m = new Map();
+  jobs.forEach((j) => { const k = (j.po_no || '—') + '|' + j.client_code + '|' + j.vendor_name; const g = m.get(k) || { key: k, po: j.po_no || '—', client: j.client_code, vendor: j.vendor_name, img: j.img, jobs: [], skus: 0, done: 0, ret: 0, hold: 0, date: j.scheduled_date };
+    g.jobs.push(j); g.skus += +j.skus; g.done += +j.done; g.ret += +j.ret; g.hold += +j.hold; if (!g.img) g.img = j.img; if (j.scheduled_date < g.date) g.date = j.scheduled_date; m.set(k, g); });
+  return [...m.values()].sort((a, b) => b.ret - a.ret || String(a.date).localeCompare(String(b.date)));
+}
+function PoFolder({ p }) {
+  const nav = useNavigate(); const [open, setOpen] = useState(p.jobs.length === 1);
+  const left = p.skus - p.done;
+  return <div className="mcard">
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }} onClick={() => setOpen(!open)}>
+      <span className="mitem"><Thumb src={p.img} size={46} /><span><b>📄 PO {p.po}</b><small style={{ display: 'block' }}>{p.client} – {p.vendor.toUpperCase()} · {fdate(p.date)}</small></span></span>
+      <span className={'vst ' + (left ? '' : 'on')}>{left ? `${left} LEFT` : 'ALL SUBMITTED'}</span></div>
+    <div className="vgrid"><div><small>Job cards</small><b>{p.jobs.length}</b></div><div><small>Designs</small><b>{p.skus}</b></div><div><small>Submitted</small><b>{p.done}</b></div><div><small>Remaining</small><b>{left}</b></div></div>
+    {(p.ret > 0 || p.hold > 0) && <p style={{ margin: '0 0 8px', fontSize: 12 }}>{p.ret > 0 && <b style={{ color: 'var(--ruby)' }}>{p.ret} returned to fix · </b>}{p.hold > 0 && <b style={{ color: '#b4561b' }}>{p.hold} on hold</b>}</p>}
+    {open ? p.jobs.map((j) => <button key={j.id} className="porow" onClick={() => nav('/app/job/' + j.id)}><span><b>{j.job_no}</b><small>{j.done}/{j.skus} submitted · {j.time_slot || ''} {j.location || ''}</small></span><Badge s={+j.ret ? 'RETURNED' : j.status} /></button>)
+      : <button className="bigbtn alt" onClick={() => setOpen(true)}>SHOW {p.jobs.length} JOB CARDS ↓</button>}
+  </div>;
+}
+
+const PURPOSES = ['QC Inspection', 'Sample / Development', 'Vendor Audit', 'Office / Meeting'];
+const hmm = (m) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+const tmm = (s) => (s ? new Date(s.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—');
+/** Live GPS fix (required for check-in). */
+const gpsFix = () => new Promise((ok, no) => { if (!navigator.geolocation) return no(new Error('This phone/browser cannot share location.'));
+  navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? 'Location permission denied — allow location for Q-TRACK in phone settings and try again.' : 'Could not get GPS location — switch on location / GPS and try again.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }); });
+/** Map address for the GPS pin (best effort, 6 s). */
+const addressOf = async (lat, lng) => { try { const c = new AbortController(); const t = setTimeout(() => c.abort(), 6000);
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat=${lat}&lon=${lng}`, { signal: c.signal, headers: { Accept: 'application/json' } }); clearTimeout(t);
+  const j = await r.json(); return j.display_name || ''; } catch { return ''; } };
+
+/** 📍 Always-on Daily Attendance & Visit Check-In — independent of PO / job card; many check-ins a day. */
+function AttCard({ d, reload }) {
+  const toast = useToast(); const [busy, setBusy] = useState(''); const [pop, setPop] = useState(null); const c = d.checkin; const day = d.day || {};
+  const vendors = d.vendors || []; const visits = d.visits || [];
+  const go = async (out) => {
+    setBusy(out ? 'out' : 'in');
+    try {
+      let g = null;
+      if (out) { g = await gpsOrNull(); }
+      else { const pos = await gpsFix(); g = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) }; }
+      const address = g ? await addressOf(g.lat, g.lng) : '';
+      const body = out ? { out: 1, ...(g || {}), address } : { vendor_id: pop.vid === 'other' ? 0 : +pop.vid || 0, place: pop.vid === 'other' ? pop.place : '', purpose: pop.purpose, ...g, address };
+      const r = await post('app/visit', body); toast(r.message); setPop(null); reload();
+    } catch (e) { toast(e.message, 'err'); }
+    setBusy('');
+  };
+  const canIn = pop && (pop.vid === 'other' ? (pop.place || '').trim().length > 1 : !!pop.vid);
+  return <div className={'mcard attcard' + (c ? ' on' : '')}>
+    <div className="atthd"><b>📍 Daily Attendance &amp; Visit Check-In</b>{day.first_in && <small>Shift {hmm(day.net)}{day.transit ? ` · travel ${hmm(day.transit)}` : ''}</small>}</div>
+    {c ? <><p className="attnow">🟢 ON-SITE at <b>{c.vendor_name}</b> · since {tmm(c.at)}{c.purpose ? ` · ${c.purpose}` : ''}</p>
+      <button className="bigbtn" style={{ margin: 0, background: '#8a2d3a' }} disabled={!!busy} onClick={() => go(true)}>{busy === 'out' ? 'Getting GPS…' : '🚪 CHECK-OUT'}</button></>
+      : <><p className="muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>{visits.length ? `Checked out — ${visits.length} visit${visits.length > 1 ? 's' : ''} today. Check-in again at the next vendor / place.` : 'Mark attendance at any vendor, market or office — with or without a PO.'}</p>
+        <button className="bigbtn gold" style={{ margin: 0 }} disabled={!!busy} onClick={() => setPop({ vid: vendors.length === 1 ? String(vendors[0].id) : '', place: '', purpose: '' })}>📍 CHECK-IN</button></>}
+    {visits.length > 0 && <div className="attlist">{visits.map((v, i) => <div key={v.id}><span>{i + 1}. <b>{v.place}</b>{v.purpose ? <small> · {v.purpose}</small> : null}</span><span className="mono">{tmm(v.at)} – {v.out_at ? tmm(v.out_at) : 'now'}</span></div>)}
+      {day.first_in && <div className="atttot"><span>First in {tmm(day.first_in)} · Last out {day.last_out && !day.open ? tmm(day.last_out) : '—'}</span><span>On-site {hmm(day.active)}</span></div>}</div>}
+    <Modal open={!!pop} title="📍 Check-In" onClose={() => setPop(null)}>
+      {pop && <>
+        <div className="f"><label>Select registered vendor</label>
+          <select value={pop.vid} onChange={(e) => setPop({ ...pop, vid: e.target.value })}><option value="">— Choose vendor —</option>
+            {vendors.some((v) => v.mine) && <optgroup label="My assigned vendors">{vendors.filter((v) => v.mine).map((v) => <option key={v.id} value={v.id}>{v.name}{v.location ? ' · ' + v.location : ''}</option>)}</optgroup>}
+            <optgroup label="All vendors">{vendors.filter((v) => !v.mine).map((v) => <option key={v.id} value={v.id}>{v.name}{v.location ? ' · ' + v.location : ''}</option>)}</optgroup>
+            <option value="other">➕ Other / unlisted vendor (type name)</option></select></div>
+        {pop.vid === 'other' && <div className="f"><label>Enter vendor / location name</label><input type="text" autoFocus value={pop.place} placeholder='e.g. New Casting Vendor - Sitapura / JEWELSETU HQ' onChange={(e) => setPop({ ...pop, place: e.target.value })} /></div>}
+        <div className="f"><label>Visit purpose (optional)</label><div className="pills">{PURPOSES.map((p) => <button key={p} type="button" className={pop.purpose === p ? 'on' : ''} onClick={() => setPop({ ...pop, purpose: pop.purpose === p ? '' : p })}>{p}</button>)}</div></div>
+        <p className="muted" style={{ fontSize: 12 }}>GPS pin, map address and time are captured automatically when you tap Check-In.</p>
+        <button className="bigbtn gold" disabled={!canIn || !!busy} onClick={() => go(false)}>{busy === 'in' ? 'Getting GPS location…' : '📍 CHECK-IN NOW'}</button>
+      </>}
+    </Modal>
+  </div>;
+}
+
 /** Best-effort GPS for check-out (never blocks check-out if the phone cannot give a fix in 12 s). */
 const gpsOrNull = () => new Promise((ok) => { if (!navigator.geolocation) return ok(null);
   navigator.geolocation.getCurrentPosition((p) => ok({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }), () => ok(null), { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }); });
-
-/** Home screen step 1: check-in at the factory before opening any job (vendor auto-picked from GPS, or chosen). */
-function HomeCheckIn({ d, reload }) {
-  const toast = useToast(); const [busy, setBusy] = useState(false); const c = d.checkin;
-  const vendors = []; (d.groups || []).forEach((g) => { if (!vendors.some((v) => v.id === g.vendor_id)) vendors.push({ id: g.vendor_id, name: g.vendor_name, job: g.job_ids[0], loc: g.location }); });
-  const [pick, setPick] = useState(vendors.length === 1 ? String(vendors[0].job) : '');
-  const send = async (out) => {
-    setBusy(true);
-    try {
-      if (out) { const g = await gpsOrNull(); const r = await post('app/checkin', { out: 1, job_id: c.job_id, ...(g || {}) }); toast(r.message); reload(); setBusy(false); return; }
-      if (!navigator.geolocation) throw new Error('This phone/browser cannot share location.');
-      const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? 'Location permission denied — allow location for this site in browser settings and try again.' : 'Could not get GPS location — switch on location / GPS and try again outdoors.')), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
-      const r = await post('app/checkin', { job_id: pick ? +pick : 0, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) });
-      toast(r.message, r.verified === false ? 'warn' : undefined); reload();
-    } catch (e) { toast(e.message, 'err'); }
-    setBusy(false);
-  };
-  if (c) return <div className="mcard" style={{ borderColor: '#9cc3e6', background: '#f1f7fd' }}><b style={{ color: '#1f5f99' }}>🔵 ON-SITE at {c.vendor_name} · since {new Date(c.at.replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>
-    <small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>{+c.verified ? `GPS verified ✓ · ${c.dist_m} m from factory pin` : 'Factory pin not set yet — your location was sent to Admin'} · open the vendor below to start QC</small>
-    <button className="btn sm" disabled={busy} onClick={() => send(true)}>{busy ? 'Getting GPS…' : '🚪 CHECK-OUT from factory'}</button></div>;
-  return <div className="mcard" style={{ borderColor: '#e2c98a' }}><b>📍 Step 1 · Arrived at the factory?</b>
-    <small style={{ display: 'block', margin: '3px 0 8px', color: 'var(--mut)' }}>Check-in first{d.geo_required ? ' — jobs open for inspection only after check-in' : ''}. GPS finds your factory automatically.</small>
-    {vendors.length > 1 && <select value={pick} onChange={(e) => setPick(e.target.value)} style={{ marginBottom: 8 }}><option value="">Auto-detect factory by GPS</option>{vendors.map((v) => <option key={v.id} value={v.job}>{v.name}{v.loc ? ' · ' + v.loc : ''}</option>)}</select>}
-    <button className="bigbtn gold" style={{ margin: 0 }} disabled={busy} onClick={() => send(false)}>{busy ? 'Getting GPS location…' : '📍 CHECK-IN AT VENDOR' + (vendors.length === 1 ? ' · ' + vendors[0].name.toUpperCase() : '')}</button></div>;
-}
 
 /** Level 1: one folder card per vendor + client + location. */
 function VendorFolder({ g }) {

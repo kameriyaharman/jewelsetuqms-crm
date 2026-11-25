@@ -400,3 +400,34 @@ tr.rowlink{cursor:pointer}tr.rowlink:hover td{background:#f1f7f8}
 .tsw{width:38px;height:21px;border-radius:99px;background:#d5d9e0;position:relative;border:0;padding:0;cursor:pointer;flex:none;transition:.2s}
 .tsw::after{content:'';position:absolute;left:3px;top:3px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
 .tsw.on{background:#1f8a5b}.tsw.on::after{left:20px}.tsw[disabled]{opacity:.5}
+/* always-on attendance card + PO-wise */
+.attcard{border-color:#e2c98a;background:#fffdf6}.attcard.on{border-color:#9cd3b4;background:#f3fbf6}
+.atthd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px}.atthd small{font-size:11.5px;color:var(--mut);white-space:nowrap}
+.attnow{margin:4px 0 10px;font-size:13px;color:#1d6b43}
+.attlist{margin-top:10px;border-top:1px dashed #e3dccb;padding-top:8px;display:grid;gap:5px;font-size:12px}
+.attlist>div{display:flex;justify-content:space-between;gap:8px}.attlist small{color:var(--mut)}
+.atttot{border-top:1px solid #eee6d2;padding-top:6px;color:var(--mut);font-weight:600}
+.attcard .pills{flex-wrap:wrap;overflow:visible}
+.seg{flex-wrap:nowrap}.seg button{padding:5px 8px}
+.porow{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 11px;margin-top:6px;text-align:left;cursor:pointer}
+.porow small{display:block;font-size:11.5px;color:var(--mut)}
+.t.muster th.c,.t.muster td.c{text-align:center;padding:5px 3px;min-width:26px;font-size:11.5px}.t.muster th.c small{display:block;font-size:9.5px;color:var(--mut);font-weight:500}
+.t.muster td.mp{background:#e7f6ed;color:#1d6b43;font-weight:700}.t.muster td.mh{background:#fff4dc;color:#8a6512;font-weight:700}.t.muster td.ms{background:#fde8e3;color:#a0412b;font-weight:700}
+.t.muster td.ml{background:#eaf0fb;color:#2a55a5;font-weight:700}.t.muster td.mw{background:#f2f2f2;color:#888}.t.muster td.ma{background:#fbe4e8;color:#a3243a;font-weight:700}
+/* compact login on phones: logo + form fit the first screen (also when the phone uses large text) */
+@media (max-width:640px){
+  .login{min-height:100dvh;align-content:start}
+  .login .hero{padding:14px 18px 16px;padding-top:calc(14px + env(safe-area-inset-top));text-align:center;align-items:center}
+  .login .hero:after{display:none}
+  .login .hero .lg{width:auto;max-width:230px;padding:8px 14px;border-radius:12px;margin:0 auto}
+  .login .hero .lg img{max-height:52px;width:auto;max-width:100%;margin:0 auto}
+  .login .hero h2{font-size:17px;margin:12px 0 0;line-height:1.3}
+  .login .hero h2 em{display:block;font-size:14px}
+  .login .hero p{display:none}
+  .login .form{padding:18px 18px 28px;place-items:start center}
+  .login .box h1{font-size:21px}
+  .login .roles{display:none}
+  .login input{font-size:16px}
+}
+.mtop{padding-top:calc(12px + env(safe-area-inset-top))}
+.attlist .mono{white-space:nowrap;font-size:11.5px}

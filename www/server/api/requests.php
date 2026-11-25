@@ -45,7 +45,7 @@ api('GET', 'request', [...R_INT, 'client', 'vendor'], function () {
         'cancel' => (is_role('super_admin', 'back_office') && in_array($job['status'], ['DRAFT', 'REQUESTED', 'SCHEDULED', 'ASSIGNED'], true)) || ($cv && $mine && in_array($job['status'], ['DRAFT', 'REQUESTED'], true)),
         'report_actions' => is_internal() && in_array($job['status'], ['EMAILED', 'APPROVED'], true),
         'finalize' => is_role('super_admin', 'qc_manager') && $job['status'] === 'APPROVED', 'close' => is_internal() && $job['status'] === 'EMAILED',
-        'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => flag('allow_job_split') && count($items) > 1,
+        'po_pdf' => in_array($job['status'], ['EMAILED', 'CLOSED', 'APPROVED'], true), 'review' => is_role('super_admin', 'qc_manager'), 'split' => true,
         'edit_design' => is_role('super_admin', 'back_office', 'qc_manager') && $openJob, 'unassign' => is_internal() && $job['inspector_id'] && unassign_block($job) === null, 'add_lot' => is_internal() && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'EMAILED'], true),
         'force_close' => is_role('super_admin', 'qc_manager') && !in_array($job['status'], ['CLOSED', 'CANCELLED', 'DRAFT', 'REQUESTED'], true)];
     // hide unpublished results from clients/vendors
@@ -190,7 +190,8 @@ api('POST', 'job/action', R_ALL, function () {
             }
             if (!one("SELECT id FROM users WHERE id=? AND role='inspector'", [$ins])) fail('Invalid inspector');
             if ($lv = on_leave($ins, (string)(in_('date') ?: ($job['scheduled_date'] ?: today())))) fail("This inspector is on leave that day ($lv).");
-            $d = ['inspector_id' => $ins ?: null, 'inspector2_id' => (int)in_('inspector2_id') ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: user()['id']];
+            $i2 = in_('inspector2_id') === null ? (int)$job['inspector2_id'] : (int)in_('inspector2_id'); if ($i2 === (int)$ins) $i2 = 0;
+            $d = ['inspector_id' => $ins ?: null, 'inspector2_id' => $i2 ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: user()['id']];
             if (in_('date')) $d['scheduled_date'] = in_('date');
             if (!$job['job_no']) $d['job_no'] = next_job_no();
             if (!$job['scheduled_date'] && !in_('date')) $d['scheduled_date'] = $job['requested_date'] ?: today();

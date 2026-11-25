@@ -92,7 +92,8 @@ function db_install(): void {
 /** Additive migrations for databases created by an earlier version. */
 function db_migrate(): void {
     $ver = (int)setting('schema_version', '1');
-    if ($ver >= 11) return;
+    if ($ver >= 12) return;
+    if ($ver === 11) { db_migrate_v12(); return; }
     if ($ver === 10) { db_migrate_v11(); return; }
     if ($ver === 9) { db_migrate_v10(); return; }
     if ($ver === 8) { db_migrate_v9(); return; }
@@ -203,6 +204,16 @@ function db_migrate_v11(): void {
     require_once __DIR__ . '/site.php';
     site_tables(); site_seed();
     set_setting('schema_version', '11');
+    db_migrate_v12();
+}
+/** v12: standalone field check-in (any vendor / manual place, visit purpose, map address) + HR & payroll attendance rules. */
+function db_migrate_v12(): void {
+    $T = is_sqlite() ? 'TEXT' : 'VARCHAR(255)';
+    foreach (['place' => $T, 'purpose' => 'VARCHAR(40)', 'address' => is_sqlite() ? 'TEXT' : 'VARCHAR(500)', 'out_address' => is_sqlite() ? 'TEXT' : 'VARCHAR(500)'] as $c => $t) {
+        try { db()->query("SELECT $c FROM checkins LIMIT 1"); } catch (Throwable $e) { db()->exec("ALTER TABLE checkins ADD COLUMN $c $t NULL"); }
+    }
+    foreach (['att_full_hrs' => '8', 'att_half_hrs' => '4', 'att_weekoff' => '0', 'att_late_grace' => '3', 'att_hd_on_late' => '0'] as $k => $v) if (setting($k, '') === '') set_setting($k, $v);
+    set_setting('schema_version', '12');
 }
 function site_tables(): void {
     $pk = is_sqlite() ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY';

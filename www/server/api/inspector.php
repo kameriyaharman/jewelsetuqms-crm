@@ -49,7 +49,13 @@ api('GET', 'app/home', ['inspector'], function () {
         $groups = array_values($groups);
         usort($groups, fn($a, $b) => [$b['onsite'] ? 1 : 0, $b['ret'], $a['next_date']] <=> [$a['onsite'] ? 1 : 0, $a['ret'], $b['next_date']]);
     }
-    return ['jobs' => $jobs, 'groups' => $groups, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'checkin' => $ck, 'geo_required' => flag('geo_checkin_required'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
+    // always-on field attendance: today's sessions + every registered vendor for the check-in picker
+    $visits = all("SELECT c.id, c.at, c.out_at, c.purpose, c.verified, c.address, COALESCE(v.name, c.place) place FROM checkins c LEFT JOIN vendors v ON v.id=c.vendor_id WHERE c.user_id=? AND c.at>=? ORDER BY c.at", [$me['id'], today() . ' 00:00:00']);
+    $mine = array_values(array_unique(array_map(fn($g) => $g['vendor_id'], $groups)));
+    $vlist = all("SELECT id, name, location FROM vendors WHERE status='ACTIVE' ORDER BY name");
+    usort($vlist, fn($a, $b) => [in_array((int)$b['id'], $mine, true) ? 1 : 0, $a['name']] <=> [in_array((int)$a['id'], $mine, true) ? 1 : 0, $b['name']]);
+    foreach ($vlist as &$vv) $vv['mine'] = in_array((int)$vv['id'], $mine, true); unset($vv);
+    return ['jobs' => $jobs, 'groups' => $groups, 'skus' => $skus, 'can_new' => flag('inspector_new_job'), 'checkin' => $ck, 'visits' => $visits, 'vendors' => $vlist, 'day' => att_day_calc($visits), 'geo_required' => flag('geo_checkin_required'), 'today' => count(array_filter($jobs, fn($j) => $j['scheduled_date'] === today())),
         'pending' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('PENDING','IN_PROGRESS','HOLD','RETURNED','COMPLETED') AND j.status NOT IN ('CANCELLED','CLOSED')", [$me['id'], $me['id']]),
         'completed' => (int)val("SELECT COUNT(*) FROM qc_items i JOIN qc_jobs j ON j.id=i.job_id WHERE (j.inspector_id=? OR j.inspector2_id=?) AND i.status IN ('SUBMITTED','UNDER_REVIEW','APPROVED')", [$me['id'], $me['id']])];
 });
@@ -375,6 +381,53 @@ api('POST', 'app/newjob', ['inspector'], function () {
 });
 
 /* ----- geo-fenced factory check-in ----- */
+/** Standalone field attendance: check-in at any registered vendor or a typed place (market, office, new supplier), independent of PO / job card. */
+api('POST', 'app/visit', ['inspector'], function () {
+    $me = user(); $in = inp();
+    $lat = (float)($in['lat'] ?? 0); $lng = (float)($in['lng'] ?? 0); $acc = (int)($in['acc'] ?? 0);
+    $addr = mb_substr(trim((string)($in['address'] ?? '')), 0, 480) ?: null;
+    if (!empty($in['out'])) {
+        $c = open_checkin((int)$me['id']); if (!$c) fail('You are not checked in right now.');
+        $set = ['out_at' => now()];
+        if ($lat || $lng) { $set += ['out_lat' => (string)$lat, 'out_lng' => (string)$lng, 'out_address' => $addr];
+            $vv = $c['vendor_id'] ? one('SELECT * FROM vendors WHERE id=?', [$c['vendor_id']]) : null;
+            if ($vv && $vv['geo_lat'] !== null && $vv['geo_lat'] !== '') { $dd = geo_dist($lat, $lng, (float)$vv['geo_lat'], (float)$vv['geo_lng']);
+                $set += ['out_dist' => $dd, 'out_verified' => $dd <= (int)($vv['geo_radius'] ?: setting('geo_radius', '250')) + min(max($acc, 0), 100) ? 1 : 0]; } }
+        update('checkins', $set, 'id=?', [$c['id']]); audit('checkin', (int)$c['id'], 'CHECK_OUT', 'place', null, $c['vendor_name']);
+        $min = (int)round((time() - strtotime($c['at'])) / 60);
+        return ['ok' => true, 'message' => 'Checked out from ' . $c['vendor_name'] . ' at ' . date('h:i A') . ' · session ' . intdiv($min, 60) . 'h ' . ($min % 60) . 'm.'];
+    }
+    if (!$lat && !$lng) fail('Location not received — allow location permission for this app and switch on GPS, then try again.');
+    $vid = (int)($in['vendor_id'] ?? 0); $place = trim((string)($in['place'] ?? '')); $purpose = trim((string)($in['purpose'] ?? ''));
+    if (!in_array($purpose, ['', 'QC Inspection', 'Sample / Development', 'Vendor Audit', 'Office / Meeting'], true)) $purpose = '';
+    $v = $vid ? one("SELECT * FROM vendors WHERE id=? AND status='ACTIVE'", [$vid]) : null;
+    if ($vid && !$v) fail('Vendor not found.');
+    if (!$v && mb_strlen($place) < 2) fail('Choose a vendor or type the vendor / location name.');
+    $row = ['user_id' => $me['id'], 'vendor_id' => $v ? $v['id'] : null, 'place' => $v ? null : mb_substr($place, 0, 200), 'purpose' => $purpose ?: null,
+        'lat' => (string)$lat, 'lng' => (string)$lng, 'acc' => $acc, 'address' => $addr, 'at' => now(), 'verified' => 0, 'dist_m' => null];
+    if ($v) {
+        if ($v['geo_lat'] !== null && $v['geo_lat'] !== '') {
+            $dist = geo_dist($lat, $lng, (float)$v['geo_lat'], (float)$v['geo_lng']); $radius = (int)($v['geo_radius'] ?: setting('geo_radius', '250'));
+            if ($dist > $radius + min(max($acc, 0), 100)) fail('You are ' . geo_fmt($dist) . ' away from ' . $v['name'] . ' factory pin. Reach the factory to check-in there, or choose "Other / unlisted" and type where you are.');
+            $row['dist_m'] = $dist; $row['verified'] = 1;
+        }
+        $job = one("SELECT id FROM qc_jobs WHERE vendor_id=? AND (inspector_id=? OR inspector2_id=?) AND status IN ('ASSIGNED','IN_PROGRESS','PARTIAL','RETURNED') ORDER BY scheduled_date LIMIT 1", [$v['id'], $me['id'], $me['id']]);
+        if ($job) $row['job_id'] = $job['id'];
+    }
+    if ($c = open_checkin((int)$me['id'])) {
+        if ($v && (int)$c['vendor_id'] === (int)$v['id']) return ['ok' => true, 'already' => true, 'message' => 'Already checked in at ' . $v['name'] . ' since ' . date('h:i A', strtotime($c['at'])) . '.'];
+        update('checkins', ['out_at' => now()], 'id=?', [$c['id']]);   // moved on: close the previous session
+    }
+    $id = insert('checkins', $row);
+    $name = $v ? $v['name'] : $row['place'];
+    if ($v && !$row['verified']) { update('vendors', ['geo_pending_lat' => (string)$lat, 'geo_pending_lng' => (string)$lng, 'geo_pending_by' => $me['id'], 'geo_pending_at' => now()], 'id=?', [$v['id']]); }
+    audit('checkin', $id, 'CHECK_IN', 'place', null, $name . ($purpose ? ' · ' . $purpose : ''));
+    $t = date('h:i A');
+    foreach (array_map('intval', array_column(all("SELECT id FROM users WHERE role IN ('super_admin','qc_manager') AND status='ACTIVE'"), 'id')) as $u)
+        notify($u, "📍 {$me['emp_code']} checked in at $name · $t" . ($purpose ? " · $purpose" : ''), 'attendance');
+    return ['ok' => true, 'id' => $id, 'message' => 'Checked in at ' . $name . ' · ' . $t . ($row['verified'] ? ' · GPS verified ✓' : ' · location saved')];
+});
+
 api('POST', 'app/checkin', ['inspector'], function () {
     $me = user(); $in = inp();
     // from the home screen: no job chosen → pick the vendor of my open jobs whose factory pin is nearest (within its radius)

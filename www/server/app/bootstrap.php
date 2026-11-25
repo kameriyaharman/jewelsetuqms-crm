@@ -502,9 +502,25 @@ function on_leave(int $uid, string $date): ?string {
     return $l ? ($l['note'] ?: 'leave ' . fdate($l['from_date'], 'd M') . ($l['to_date'] !== $l['from_date'] ? '–' . fdate($l['to_date'], 'd M') : '')) : null;
 }
 /** Today's open check-in of an inspector (at a factory, not checked out). */
+/** HR day maths from one inspector's check-in sessions of one day:
+ *  net shift = first check-in → last check-out, on-site = sum of sessions, transit = gaps between sessions. Minutes. */
+function att_day_calc(array $ses): array {
+    if (!$ses) return ['first_in' => null, 'last_out' => null, 'net' => 0, 'active' => 0, 'transit' => 0, 'open' => false];
+    $first = null; $last = null; $active = 0; $open = false;
+    foreach ($ses as $s) {
+        $a = strtotime($s['at']); $isToday = substr($s['at'], 0, 10) === date('Y-m-d');
+        $b = $s['out_at'] ? strtotime($s['out_at']) : ($isToday ? time() : null);
+        if (!$s['out_at']) $open = true;
+        if ($first === null || $a < $first) $first = $a;
+        if ($b !== null) { $active += max(0, $b - $a); if ($last === null || $b > $last) $last = $b; }
+    }
+    $net = $last !== null ? max(0, $last - $first) : 0; $active = min($active, $net ?: $active);
+    return ['first_in' => date('Y-m-d H:i:s', $first), 'last_out' => $last !== null ? date('Y-m-d H:i:s', $last) : null,
+        'net' => (int)round($net / 60), 'active' => (int)round($active / 60), 'transit' => (int)round(max(0, $net - $active) / 60), 'open' => $open];
+}
 function open_checkin(int $uid, ?string $date = null): ?array {
     $d = $date ?: today();
-    return one("SELECT c.*, v.name vendor_name FROM checkins c LEFT JOIN vendors v ON v.id=c.vendor_id WHERE c.user_id=? AND c.out_at IS NULL AND c.at>=? AND c.at<? ORDER BY c.id DESC LIMIT 1", [$uid, "$d 00:00:00", date('Y-m-d', strtotime("$d +1 day")) . ' 00:00:00']) ?: null;
+    return one("SELECT c.*, COALESCE(v.name, c.place) vendor_name FROM checkins c LEFT JOIN vendors v ON v.id=c.vendor_id WHERE c.user_id=? AND c.out_at IS NULL AND c.at>=? AND c.at<? ORDER BY c.id DESC LIMIT 1", [$uid, "$d 00:00:00", date('Y-m-d', strtotime("$d +1 day")) . ' 00:00:00']) ?: null;
 }
 /** 4-state live status of an inspector for a date: AVAILABLE / ASSIGNED (en-route) / ONSITE / LEAVE. */
 function insp_status(int $uid, string $date, int $excludeJob = 0): array {

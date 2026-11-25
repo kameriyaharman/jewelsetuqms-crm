@@ -31,7 +31,7 @@ api('GET', 'jobs/assign', R_INT, function () {
     foreach ($team as &$t) { $t['near'] = $t['location'] && stripos($job['vendor_address'] . ' ' . $job['location'], (string)$t['location']) !== false; $t['st'] = insp_status((int)$t['id'], $date, (int)$job['id']); }
     unset($t);
     usort($team, fn($a, $b) => (['AVAILABLE' => 0, 'ASSIGNED' => 1, 'ONSITE' => 2, 'LEAVE' => 3][$a['st']['code']] <=> ['AVAILABLE' => 0, 'ASSIGNED' => 1, 'ONSITE' => 2, 'LEAVE' => 3][$b['st']['code']]) ?: strcmp((string)$a['emp_code'], (string)$b['emp_code']));
-    return ['job' => $job, 'date' => $date, 'team' => $team, 'unassign_ok' => $job['inspector_id'] ? unassign_block($job) === null : true, 'is_sa' => is_role('super_admin'), 'skus' => (int)val('SELECT COUNT(*) FROM qc_items WHERE job_id=?', [$job['id']]), 'split' => flag('allow_job_split')];
+    return ['job' => $job, 'date' => $date, 'team' => $team, 'unassign_ok' => $job['inspector_id'] ? unassign_block($job) === null : true, 'is_sa' => is_role('super_admin'), 'skus' => (int)val('SELECT COUNT(*) FROM qc_items WHERE job_id=?', [$job['id']]), 'split' => true];
 });
 
 api('GET', 'schedule', [...R_INT, 'vendor', 'client'], function () {
@@ -229,6 +229,10 @@ api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], fu
         return ['ok' => true, 'message' => "$done job(s) moved to Unassigned" . ($skip ? ' · not changed (inspection started / submitted): ' . implode(', ', array_slice($skip, 0, 10)) . (is_role('super_admin') ? ' — use force to override' : '') : '') . '.'];
     }
     if (!$ins) fail('Select an inspector (or use Unassign selected).');
+    $ins2 = (int)in_('inspector2_id'); if ($ins2 === $ins) $ins2 = 0;
+    $ip2 = $ins2 ? one("SELECT id, name, emp_code FROM users WHERE id=? AND role='inspector' AND status='ACTIVE'", [$ins2]) : null;
+    if ($ins2 && !$ip2) fail('Invalid second inspector');
+    if ($ins2 && ($lv = on_leave($ins2, (string)($date ?: today())))) fail("The second inspector is on leave that day ($lv).");
     if ($ins && ($lv = on_leave($ins, (string)($date ?: today())))) fail("This inspector is on leave that day ($lv).");
     $ip = $ins ? one("SELECT id, name, emp_code FROM users WHERE id=? AND role='inspector' AND status='ACTIVE'", [$ins]) : null;
     if ($ins && !$ip) fail('Invalid inspector');
@@ -236,7 +240,7 @@ api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], fu
     foreach ($ids as $id) {
         $job = job_load($id);
         if (!$job || !in_array($job['status'], ['REQUESTED', 'SCHEDULED', 'ASSIGNED', 'IN_PROGRESS', 'PARTIAL'], true)) { $skip[] = $job['job_no'] ?? $id; continue; }
-        $d = ['inspector_id' => $ins ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: (mgr_on() ? null : user()['id'])];
+        $d = ['inspector_id' => $ins ?: null, 'inspector2_id' => $ins2 ?: null, 'assigned_at' => now(), 'manager_id' => $job['manager_id'] ?: (mgr_on() ? null : user()['id'])];
         if ($date) $d['scheduled_date'] = $date; elseif (!$job['scheduled_date']) $d['scheduled_date'] = $job['requested_date'] ?: today();
         if (!$job['job_no']) $d['job_no'] = next_job_no();
         if ($ins && in_array($job['status'], ['REQUESTED', 'SCHEDULED'], true)) $d['status'] = 'ASSIGNED';
@@ -245,8 +249,9 @@ api('POST', 'jobs/bulk_assign', ['super_admin', 'qc_manager', 'back_office'], fu
         audit('job', $id, 'ASSIGNED', 'inspector', $job['inspector_code'], $ip['emp_code'] ?? null);
         $done++; $pos[$job['po_no']] = true;
     }
-    if ($ip && $done) notify($ins, "$done QC job(s) assigned to you · PO " . implode(', ', array_keys($pos)) . ($date ? ' · ' . fdate($date) : ''), 'app');
-    return ['ok' => true, 'message' => "$done job(s) " . ($ip ? "assigned to {$ip['emp_code']} · {$ip['name']}" : 'unassigned') . ($skip ? ' · skipped (closed/under review): ' . implode(', ', array_slice($skip, 0, 8)) : '') . '.'];
+    if ($ip && $done) notify($ins, "$done QC job(s) assigned to you · PO " . implode(', ', array_keys($pos)) . ($date ? ' · ' . fdate($date) : '') . ($ip2 ? " · with {$ip2['emp_code']}" : ''), 'app');
+    if ($ip2 && $done) notify($ins2, "$done QC job(s) assigned to you (2nd inspector, with {$ip['emp_code']}) · PO " . implode(', ', array_keys($pos)) . ($date ? ' · ' . fdate($date) : ''), 'app');
+    return ['ok' => true, 'message' => "$done job(s) " . ($ip ? "assigned to {$ip['emp_code']} · {$ip['name']}" . ($ip2 ? " + {$ip2['emp_code']} · {$ip2['name']}" : '') : 'unassigned') . ($skip ? ' · skipped (closed/under review): ' . implode(', ', array_slice($skip, 0, 8)) : '') . '.'];
 });
 
 
